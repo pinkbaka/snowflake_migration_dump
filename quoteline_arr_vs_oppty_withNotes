@@ -1,0 +1,227 @@
+// This is population of Opps that we want to calculate product level ARR for
+
+SELECT *
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE STAGENAME = 'Closed Won'
+  and Closedate >= '1/1/2020'
+  and closedate <= '6/30/2021'
+  and TYPE in ('New Business','Upsell','Renewal');
+  
+  
+  
+  SELECT *
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE STAGENAME = 'Closed Won'
+  and Closedate >= '1/1/2020'
+  and closedate <= '6/30/2021'
+  and TYPE in ('New Business','Upsell','Renewal')
+  and UPPER(NAME) like '%AMENDMENT%';
+  
+
+// what does this population of opps look like by type?
+
+SELECT TYPE, COUNT(*)
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE STAGENAME = 'Closed Won'
+  and Closedate >= '1/1/2020'
+  and closedate <= '6/30/2021'
+  and TYPE in ('New Business','Upsell','Renewal')
+GROUP BY TYPE;
+  
+ 
+ 
+ SELECT SBQQ__QUOTE__C, 
+        --PRODUCT_OPTION_CONFIGURED_SKU__C,
+        --UNIT_OF_MEASURE__C,
+        SBQQ__PRODUCTNAME__C,SBQQ__PRODUCTFAMILY__C,
+        --SBQQ__PRODUCTCODE__C 
+        count(*)
+        FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"
+ WHERE SBQQ__QUOTE__C in (
+      SELECT SBQQ__PRIMARYQUOTE__C
+      FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+      WHERE STAGENAME = 'Closed Won'
+        and Closedate >= '1/1/2020'
+        and closedate <= '6/30/2021'
+        and TYPE in ('New Business')
+   )
+   --and SBQQ__PRODUCTFAMILY__C <> 'Services'
+   and SBQQ__PRODUCTFAMILY__C = 'Router'
+   group by 1,2,3
+   
+   having count(*)>1
+   order by SBQQ__QUOTE__C;
+
+  
+  
+// We need to understand discrepancies between the OPP and the Quoteline
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR"
+as
+    (
+   SELECT t2.NAME, t1.ID as QUOTE_ID,   QUOTE_LINE_ARR__C, EXPIRING_QUOTE_LINE_ARR__C, QUOTE_LINE_NEW_ARR__C, EXCLUDE_FROM_ARR_CALCULATION__C, EXCLUDE_FROM_NEW__C,
+      t2.ID as OPP_ID, ARR__C, EXPIRING_ACV__C, NEW_ARR__C,
+      t2.TYPE as OPP_TYPE,
+      SUM(QUOTE_LINE_ARR__C) OVER (PARTITION BY t2.ID) as QL_ARR_TOTAL_AGG,
+      SUM(EXPIRING_QUOTE_LINE_ARR__C) OVER (PARTITION BY t2.ID) as EXP_QL_ARR_TOTAL_AGG
+   FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C" t1
+   LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2
+   on t1.SBQQ__QUOTE__C = t2.SBQQ__PRIMARYQUOTE__C
+   WHERE SBQQ__QUOTE__C in ( SELECT SBQQ__PRIMARYQUOTE__C
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+                            WHERE STAGENAME = 'Closed Won'
+                            and Closedate >= '1/1/2020'
+                            and closedate <= '6/30/2021'
+                            and TYPE in ('New Business','Upsell','Renewal'))
+    );
+    
+    
+// Break out population into new business because of quoteline exclusion
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_NEW_BUS"
+as
+    (
+      
+      SELECT NAME, QUOTE_ID,   QUOTE_LINE_ARR__C, EXPIRING_QUOTE_LINE_ARR__C, QUOTE_LINE_NEW_ARR__C, EXCLUDE_FROM_ARR_CALCULATION__C, EXCLUDE_FROM_NEW__C,
+         OPP_ID, ARR__C, EXPIRING_ACV__C, NEW_ARR__C,
+         OPP_TYPE,
+      SUM(QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as QL_ARR_TOTAL_AGG,
+      SUM(EXPIRING_QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as EXP_QL_ARR_TOTAL_AGG,
+      SUM (QUOTE_LINE_NEW_ARR__C) OVER (PARTITION BY OPP_ID) as QL_NEW_ARR_TOTAL_AGG
+      FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR"
+      WHERE EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+      and OPP_TYPE = 'New Business'
+    );
+    
+
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_NEW_BUS"
+WHERE OPP_TYPE = 'New Business'
+        AND ARR__C <> QL_ARR_TOTAL_AGG;
+// OUTCOME: No differences between QUOTELINE and OPP for ARR
+
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_NEW_BUS"
+WHERE OPP_TYPE = 'New Business'
+        AND NEW_ARR__C <> QL_NEW_ARR_TOTAL_AGG;
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_NEW_BUS"
+WHERE NAME = 'Healthy.io - Lead (10) + 10 ramp';
+
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in Expiring Quoteline ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_NEW_BUS"
+WHERE OPP_TYPE = 'New Business'
+        AND EXPIRING_ACV__C <> EXP_QL_ARR_TOTAL_AGG;
+// OUTCOME: No differences between QUOTELINE and OPP for ARR for EXPIRING QUOTELINE ARR
+     
+
+// Break out population into Upsell 
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_UPSELL"
+as
+    (
+      
+      SELECT QUOTE_ID,   QUOTE_LINE_ARR__C, EXPIRING_QUOTE_LINE_ARR__C, QUOTE_LINE_NEW_ARR__C, EXCLUDE_FROM_ARR_CALCULATION__C, EXCLUDE_FROM_NEW__C,
+         OPP_ID, ARR__C, EXPIRING_ACV__C, NEW_ARR__C,
+         OPP_TYPE,
+      SUM(QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as QL_ARR_TOTAL_AGG,
+      SUM(EXPIRING_QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as EXP_QL_ARR_TOTAL_AGG
+      
+      FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR"
+      WHERE EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+      and OPP_TYPE = 'Upsell'
+    );
+    
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_UPSELL"
+WHERE OPP_TYPE = 'Upsell'
+        AND ARR__C <> QL_ARR_TOTAL_AGG;
+// OUTCOME: No differences between QUOTELINE and OPP for ARR
+
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in Expiring Quoteline ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_UPSELL"
+WHERE OPP_TYPE = 'Upsell'
+        AND EXPIRING_ACV__C <> EXP_QL_ARR_TOTAL_AGG;
+// OUTCOME:  SOME DIFFERNCES EXIST ****
+
+
+
+
+// Break out population into Renewal with ARR Exclusion
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_RENEWAL_WITH_EXCLUSION"
+as
+    (
+      
+      SELECT QUOTE_ID,   QUOTE_LINE_ARR__C, EXPIRING_QUOTE_LINE_ARR__C, QUOTE_LINE_NEW_ARR__C, EXCLUDE_FROM_ARR_CALCULATION__C, EXCLUDE_FROM_NEW__C,
+         OPP_ID, ARR__C, EXPIRING_ACV__C, NEW_ARR__C,
+         OPP_TYPE,
+      SUM(QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as QL_ARR_TOTAL_AGG,
+      SUM(EXPIRING_QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as EXP_QL_ARR_TOTAL_AGG
+      
+      FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR"
+      WHERE EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+      and OPP_TYPE = 'Renewal'
+    );
+
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_RENEWAL_WITH_EXCLUSION"
+WHERE OPP_TYPE = 'Renewal'
+        AND ARR__C <> QL_ARR_TOTAL_AGG;
+// OUTCOME: No differences between QUOTELINE and OPP for ARR
+
+
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in ARR
+SELECT * 
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_RENEWAL_WITH_EXCLUSION"
+WHERE OPP_TYPE = 'Renewal'
+        AND  EXPIRING_ACV__C <> EXP_QL_ARR_TOTAL_AGG
+order by opp_id;
+
+
+// Break out population into Renewal with ARR Exclusion
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_RENEWAL_WITHOUT_EXCLUSION"
+as
+    (
+      
+      SELECT NAME, QUOTE_ID,   QUOTE_LINE_ARR__C, EXPIRING_QUOTE_LINE_ARR__C, QUOTE_LINE_NEW_ARR__C, EXCLUDE_FROM_ARR_CALCULATION__C, EXCLUDE_FROM_NEW__C,
+         OPP_ID, ARR__C, EXPIRING_ACV__C, NEW_ARR__C,
+         OPP_TYPE,
+      SUM(QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as QL_ARR_TOTAL_AGG,
+      SUM(EXPIRING_QUOTE_LINE_ARR__C) OVER (PARTITION BY OPP_ID) as EXP_QL_ARR_TOTAL_AGG
+      
+      FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR"
+      WHERE --EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+      --and 
+      OPP_TYPE = 'Renewal'
+    );
+    
+// Check Type New BUsiness Quoteline and Opportunity for Discrepancies in Expiring Quoteline ARR
+SELECT abs(EXPIRING_ACV__C - EXP_QL_ARR_TOTAL_AGG),* 
+
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_CW_QUOTELINE_INCLUDED_ARR_RENEWAL_WITHOUT_EXCLUSION"
+WHERE OPP_TYPE = 'Renewal'
+        AND EXPIRING_ACV__C <> EXP_QL_ARR_TOTAL_AGG
+        and EXPIRING_QUOTE_LINE_ARR__C is not null
+        and abs(EXPIRING_ACV__C - EXP_QL_ARR_TOTAL_AGG) >= 100
+ORDER BY abs(EXPIRING_ACV__C - EXP_QL_ARR_TOTAL_AGG) desc, OPP_ID;
+// OUTCOME:  SOME DIFFERNCES EXIST ****
+
+
+SELECT *
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE CLOSEDATE >= '1/1/2021'
+;
+
+SELECT ARR__C, CONTRACT_TERM__C,*
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE ISWON = TRUE
+AND CLOSEDATE >= '2021-01-01'
+AND CLOSEDATE <= '2021-12-30'
+AND TYPE = 'New Business'
+and CONTRACT_TERM__C <> 1;
+
+
