@@ -1,0 +1,60 @@
+create or replace procedure RunBatchSQL(sqlCommand String)
+returns string
+language JavaScript
+as
+$$
+/**
+ * Stored procedure to execute multiple SQL statements generated from a SQL query
+ * Note that this procedure will always use the column named "SQL_COMMAND"
+ *
+ * @param {String} sqlCommand: The SQL query to run to generate one or more SQL commands 
+ * @return {String}: A string containing all the SQL commands executed, each separated by a newline. 
+ */
+      cmd1_dict = {sqlText: SQLCOMMAND};
+      stmt = snowflake.createStatement(cmd1_dict);
+
+      rs = stmt.execute();
+
+      var s = '';
+
+      while (rs.next())  {
+          cmd2_dict = {sqlText: rs.getColumnValue("SQL_COMMAND")};
+          stmtEx = snowflake.createStatement(cmd2_dict);
+          stmtEx.execute();
+          s += rs.getColumnValue(1) + "\n";
+          }
+
+      return s;
+
+$$;
+
+
+-- This is a select query that will generate a list of SQL commands to execute in batch. 
+-- This SQL will generate rows to drop all tables starting with c$. With minor edits
+-- you could limit it to a specific database or schema.
+select 'drop table ' || TABLE_CATALOG || '.' || TABLE_SCHEMA || '.' || "TABLE_NAME" as SQL_COMMAND
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME like 'c$%';
+
+use "PC_MATILLIONLOADER_DB";
+--"MTL_LOAD_PRE"."PUBLIC"."STAGE_CONTACT_METADATA_DA00C06743A54558A318142078697365"
+select 'drop table ' || 'PC_MATILLIONLOADER_DB' || '.' || 'PUBLIC' || '.' || "TABLE_NAME" as SQL_COMMAND
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME like 'STAGE_%';
+
+-- As a convenience, this grabs the last SQL run so that it's easier to insert into 
+-- the parameter used to call the stored procedure. 
+set query_text = (  select QUERY_TEXT
+                    from table(information_schema.query_history(result_limit => 2))
+                    where SESSION_ID = Current_Session() and QUERY_TYPE = 'SELECT' order by START_TIME desc);
+
+-- Confirm that the query_text variable has the correct SQL query to generate our SQL commands (grants in this case) to run.
+select $query_text;
+
+-- Run the stored procedure. Note that to view its output better, double click on the output to see it in multi-line format,
+Call RunBatchSQL($query_text);
+
+--Check the last several queries run to make sure it worked.
+select QUERY_TEXT
+from table(information_schema.query_history(result_limit => 100))
+where SESSION_ID = Current_Session() order by START_TIME desc;
