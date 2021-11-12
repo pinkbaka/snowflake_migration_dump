@@ -1,0 +1,103 @@
+SELECT OPP_CREATEDBY_NAME__SNW, count(CREATED_BY_ROLE__C)
+FROM
+(
+SELECT FIRST_CALL_RESULT__C as test, * 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+on t1.ID = t2.OPPORTUNITYID
+WHERE CREATED_BY_ROLE__C like '%SDR%'
+AND CREATEDDATE >= '1/1/2021'
+AND S1_REACHED is not null
+AND FIRST_CALL_RESULT__C = 'Completed'
+AND TYPE = 'New Business'
+)
+group by OPP_CREATEDBY_NAME__SNW
+
+SELECT OPP_CREATEDBY_NAME__SNW, count(CREATED_BY_ROLE__C)
+FROM
+(
+SELECT FIRST_CALL_RESULT__C as test, * 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+on t1.ID = t2.OPPORTUNITYID
+WHERE CREATED_BY_ROLE__C like '%SDR%'
+AND FIRST_CALL_DATE__C >= '1/1/2021'
+AND S1_REACHED is not null
+AND FIRST_CALL_RESULT__C = 'Completed'
+AND TYPE = 'New Business'
+)
+group by OPP_CREATEDBY_NAME__SNW
+
+
+set CY = '2021';
+set CQ = 'Q1';
+set NQ = 'Q2';
+
+SELECT CREATED_BY_ROLE__C, OPP_CREATEDBY_NAME__SNW,  monthname(FIRST_CALL_DATE__C), count(*)
+FROM
+(SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE YEAR(FIRST_CALL_DATE__C) >= 2021
+and FIRST_CALL_RESULT__C = 'Completed'
+and CREATED_BY_ROLE__C like '%SDR%')
+group by 1,2,3
+order by 1,2
+
+
+
+set CY = '2021';
+set CQ = 'Q1';
+set NQ = 'Q2';
+SELECT * 
+FROM 
+  (
+
+  SELECT CREATED_BY_ROLE__C, CREATEDBYID, OPP_CREATEDBY_NAME__SNW,  UPPER(monthname(FIRST_CALL_DATE__C)) as monthname, count(FIRST_CALL_DATE__C) as FirstMeetingCt
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+    on t1.ID = t2.OPPORTUNITYID
+  WHERE YEAR(FIRST_CALL_DATE__C) >= 2021
+  and FIRST_CALL_RESULT__C = 'Completed'
+  and CREATED_BY_ROLE__C like '%SDR%'
+  and TYPE = 'New Business'
+  and S1_REACHED is not null
+  group by 1,2,3,4
+  order by 1,2,3
+
+  ) 
+PIVOT(Sum(FirstMeetingCt) for monthname in ('JAN', 'FEB', 'MAR','APR', 'MAY', 'JUN','JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'))
+as p
+
+order by 1,3;
+
+SELECT *
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2
+on t1.ACCOUNTID = t2.ACCOUNTID
+WHERE YEAR(CLOSEDATE) >= 2021
+AND YEAR(ACTIVITYDATE) >= 2021
+and ACTIVITY_OWNER_EQUALS_ADR__C = TRUE
+and t1.STATUS = 'Completed'
+and t1.TYPE = 'Demo Completed'
+and BEST_RELATIONSHIP_UPON_OPP_CREATION__C is not null
+
+SELECT * 
+FROM 
+  (
+
+  SELECT CREATED_BY_ROLE__C, CREATEDBYID, OPP_CREATEDBY_NAME__SNW,  UPPER(monthname(FIRST_CALL_DATE__C)) as monthname, count(FIRST_CALL_DATE__C) as FirstMeetingCt
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+    on t1.ID = t2.OPPORTUNITYID
+  WHERE YEAR(FIRST_CALL_DATE__C) >= 2021
+  and FIRST_CALL_RESULT__C = 'Completed'
+  and CREATED_BY_ROLE__C like '%SDR%'
+  and TYPE = 'New Business'
+  --and S1_REACHED is not null
+  group by 1,2,3,4
+  order by 1,2,3
+
+  ) 
+PIVOT(Sum(FirstMeetingCt) for monthname in ('JAN', 'FEB', 'MAR','APR', 'MAY', 'JUN','JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'))
+as p
+order by 1,3
+ 
