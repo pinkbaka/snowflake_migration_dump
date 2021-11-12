@@ -1,0 +1,746 @@
+select max(MATILLION_UPDATED_TIMESTAMP) from "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY";
+
+// Related Links
+// AE Quota and Max Pipeline Manual Entry https://docs.google.com/spreadsheets/d/1ENQKWDS_f7GnZUWHyBcL2RhElryKZ7ao31qqrATkqFs/edit#gid=0
+
+// **** Requires Updates
+
+//      TABLE OF CONTENTS
+//      (TOC-1) - SET VARIABLES
+//      (TOC-2) - CREATE TEMPORARY OPPTY TABLE
+//      (TOC-3) - REASSIGN OPPTYS (ROLE CHANGES)
+//      (TOC-4) - CREATE TEMPORARY AE LIST    
+//      (TOC-5) - FIND REP QUARTERLY ATTAINMENT    
+//      (TOC-6) - JOIN AE LIST & QUARTERLY ATTAINMENT -- this join does not need to be here, it can be abstracted by adding a field to the main table and updating
+//      (TOC-7) - CREATE KPI FIELDS ON MAIN TABLE
+//      (TOC-8) - CREATE CW TABLE, UPDATE MAIN
+//      (TOC-9) - CREATE S3_CW TABLE, UPDATE MAIN
+//      (TOC-10) - CREATE AVG S3_CW TABLE, COMPARE -- TO DO HERE
+//      (TOC-11) - CREATE AVG S3_CW_BYSEG(AE) TABLE
+//      (TOC-12) - CREATE AVG S3_CW_BYAM TABLE
+//      (TOC-13) - COMPARE ROLE SPECIFIC S3_CW
+//      (TOC-14) - MAP REP QUOTA, CALC PIPELINE GOAL            **** MUST UPDATE QUARTERLY
+//      (TOC-15) - CALC OPP CREATION/BEST RELATIONSHIP 
+//      (TOC-16) - CALC PIPELINE BY BEST RELATIONSHIP
+//      (TOC-17) - CALC & COMPARE SELFGEN PIPELINE GOAL
+//      (TOC-18) - CALC PIPELINE SELFGEN WITH BEST RELATIONSHIP
+//      (TOC-19) - CALC PIPELINE OWNED IN QUARTER               **** MUST UPDATE QUARTERLY
+//      (TOC-20) - CALC PIPELINE OWNED IN Q BEST RELATIONSHIP   **** MUST UPDATE QUARTERLY
+//      (TOC-21) - CALC PIPELINE OWNED ATTAINMENT
+//      (TOC-22) - CALC PIPELINE OWNED BEST REL RATE
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-1) - SET VARIABLES @@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// Set Variables to represent beginning and end of quarter
+
+set begindate = '7/1/2021';
+set enddate = '10/1/2021';
+set pipelinefactor = 5;
+set pipelinefactor_EC = 3;
+set pipelinefactor_MM = 3.5;
+set pipelinefactor_EE = 3.5;
+set pipelinefactor_LE = 3.5;
+set pipelinefactor_AM = 2.5;
+set selfgen_pipelinefactor = 0.2;
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-2) - CREATE TEMPORARY OPPTY TABLE @@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// Create a temporary table of opportunities for the AE QBP
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+as (SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    WHERE TYPE in ('New Business' , 'Upsell', 'Renewal'));
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-3) - REASSIGN OPPTYS (ROLE CHANGES) @@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// UPDATE TEMP OPP Table to represent Molly's EC deals under her MM SFDC ID
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+SET OWNERID = CASE WHEN (OWNERID = '0055A000008NWBzQAO') then '0055A00000Apg1PQAR' else OWNERID end,
+    OPPORTUNITY_OWNER_ROLE__C = CASE WHEN (OWNERID = '0055A000008NWBzQAO') then  'AE - Mid Market Sales' else OPPORTUNITY_OWNER_ROLE__C end,
+    BEST_RELATIONSHIP_UPON_OPP_CREATION__C = CASE WHEN (BEST_RELATIONSHIP_UPON_OPP_CREATION__C = '0055A000008NWBzQAO') then '0055A00000Apg1PQAR' else BEST_RELATIONSHIP_UPON_OPP_CREATION__C end,
+    CREATEDBYID = CASE WHEN (CREATEDBYID = '0055A000008NWBzQAO') then '0055A00000Apg1PQAR' else CREATEDBYID end;
+    
+set old_OwnerID = '0055A000008NUz4QAG';
+set new_OwnerID = '0056e00000AgQnRAAV';
+set new_OwnerRole = 'AE - Emerging Commercial Sales';
+//set old_BestRelationshipID =;
+//set new_BestRelationshipID =;
+//set old_CreatedByID =;
+//set new_CreatedByID =;
+
+//0056e00000AgQnRAAV
+//AE - Mid Market Sales
+//Kevin Kim
+//0055A000008NUz4QAG
+//AE - Emerging Commercial Sales
+//Kevin Kim (EC AE)
+
+// UPDATE TEMP OPP Table to represent Kevin's EC deals under their MM SFDC ID
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+SET OWNERID = CASE WHEN (OWNERID = $old_OwnerID) then $new_OwnerID else OWNERID end,
+    OPPORTUNITY_OWNER_ROLE__C = CASE WHEN (OWNERID = $old_OwnerID) then  $new_OwnerRole else OPPORTUNITY_OWNER_ROLE__C end,
+    BEST_RELATIONSHIP_UPON_OPP_CREATION__C = CASE WHEN (BEST_RELATIONSHIP_UPON_OPP_CREATION__C = $old_OwnerID) then  $new_OwnerID else BEST_RELATIONSHIP_UPON_OPP_CREATION__C end,
+    CREATEDBYID = CASE WHEN (CREATEDBYID = $old_OwnerID) then $new_OwnerID else CREATEDBYID end,
+    OPP_OWNERNAME__SNW = CASE WHEN OWNERID in ('0056e00000AgQnRAAV','0055A000008NUz4QAG') then 'Kevin Kim' else OPP_OWNERNAME__SNW end;
+
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+//where OWNERID= '0055A00000Apg1PQAR';
+    
+
+    
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-4) - CREATE TEMPORARY AE LIST @@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  
+// CREATE list of AE's with Managers 
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."AE_LIST"
+as (
+      SELECT t1.ID, t1.NAME, SF_ID as SF_USER_ID, MANAGERID, '                     ' AS MANAGER_NAME, ROLE
+      FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_AE_QUOTAMAPPING" t1
+      LEFT JOIN "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_USER" t2
+            on t1.SF_ID = t2.ID
+        WHERE t1.ROLE in ('AE','AM')
+        ORDER BY ID ASC
+    );
+    
+// Populate Manager Name\
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."AE_LIST" t1
+SET t1.MANAGER_NAME = t2.NAME
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_USER" t2
+WHERE  t1.MANAGERID = t2.ID;
+
+
+
+//set begindate = '1/1/2021';
+//set enddate = '4/1/2021';
+//    select SUM(SALES_CREDIT_ARR__C) as "REP_QUARTERLY_ATTAINMENT"
+//    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+//    where CLOSEDATE >= $begindate and CLOSEDATE < $enddate
+//    and STAGENAME = 'Closed Won'
+//    and TYPE in ('New Business' , 'Upsell', 'Renewal')
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@@@ (TOC-5) - FIND REP QUARTERLY ATTAINMENT @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@    
+    
+// Find the Closed Won Sales Credit for each Rep and created MAIN skillwill table
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PRE"
+as (
+    select OPP_OWNERNAME__SNW, OWNERID,OPPORTUNITY_OWNER_ROLE__C, SUM(SALES_CREDIT_ARR__C) as "REP_QUARTERLY_ATTAINMENT",
+    SUM(ARR__C) as "REP_QUARTERLY_ATTAINMENT_ARR"  
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CLOSEDATE >= $begindate and CLOSEDATE < $enddate
+    and STAGENAME = 'Closed Won'
+    and TYPE in ('New Business' , 'Upsell', 'Renewal')
+    group by OPP_OWNERNAME__SNW, OWNERID, OPPORTUNITY_OWNER_ROLE__C
+    );
+    
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-6) - JOIN AE LIST & QUARTERLY ATTAINMENT @@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@   
+// join AE list and AE Attainment
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+as (
+    select OPP_OWNERNAME__SNW, SF_USER_ID as OWNERID,OPPORTUNITY_OWNER_ROLE__C,MANAGER_NAME, REP_QUARTERLY_ATTAINMENT,REP_QUARTERLY_ATTAINMENT_ARR
+    FROM "MTL_LOAD_PRE"."PUBLIC"."AE_LIST" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PRE" t2
+    on t1.SF_USER_ID = t2.OWNERID
+    );
+
+// fill in blank Owner names and roles
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.OPP_OWNERNAME__SNW = t2.NAME,
+    t1.OPPORTUNITY_OWNER_ROLE__C = t2.ROLE || ' - ' || case when t2.segment = 'EC' then 'Emerging Commercial Sales'
+                                                        when t2.segment = 'MM' then 'Mid Market Sales'
+                                                        when t2.segment = 'EE' then 'Emerging Enterprise Sales'
+                                                        when t2.segment = 'LE' then 'Large Enterprise Sales'
+                                                        when t2.segment = 'AM' then 'AM - Commercial Sales'
+                                                        end
+    
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_AE_QUOTAMAPPING" t2
+WHERE t1.OWNERID = t2.SF_ID
+AND t1.OPP_OWNERNAME__SNW IS NULL;
+
+
+
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+//order by OPP_OWNERNAME__SNW ;
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7) - CREATE KPI FIELDS ON MAIN TABLE @@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+
+// Append additional calculation fields to MAIN table
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD CW_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_CW_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3AVG_CW_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_AVG_CW_COMPARE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3AVG_CW_RATE_BYSEG FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_AVG_CW_COMPARE_BYSEG FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_PIPELINEGOAL FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_MAXPIPELINEOWNED FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_MAXPIPELINEOWNED_BESTRELATIONSHIP FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_PIPELINEOWNED_BESTRELATIONSHIP_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_PIPELINEOWNED_ATTAINMENT FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_QUOTA FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_QUARTER_ATTAINMENT FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD REP_QUARTER_ATTAINMENT_ARR FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD SELF_GEN_PIPELINE_GOAL FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD SELF_GEN_PIPELINE_CQ FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD SELF_GEN_PIPELINE_CQ_OWNED FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD OPPS_OWNED FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD OPPS_BEST_RELATIONSHIP FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD OPPS_SELF_GEN FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD PERCENT_SELF_GEN FLOAT;
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8) - CREATE CW TABLE, UPDATE MAIN @@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+// Calculate the CW Rate for each rep based on all opps in the period with an amount added date
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE"
+as (
+    select OWNERID, OPP_OWNERNAME__SNW, --AVG(EBSTA1__EBSTA_SCORE__C),
+    SUM(CASE WHEN STAGENAME = 'Closed Lost' THEN 1 else 0 end) as "Closed Lost",
+    SUM(CASE WHEN STAGENAME = 'Closed Won' THEN 1 else 0 end) as "Closed Won",
+    SUM(CASE WHEN STAGENAME = 'Disqualified' THEN 1 else 0 end)  as "Disqualified",
+    count(*) as "Total Opps",
+    DIV0(SUM(CASE WHEN STAGENAME = 'Closed Won' THEN 1 else 0 end),count(*)) as "CW_RATE"
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CLOSEDATE >= $begindate and CLOSEDATE < $enddate
+    and TYPE in ('New Business' , 'Upsell', 'Renewal')
+    --and AMOUNT_ADDED_DATE__C is not null
+    group by OWNERID, OPP_OWNERNAME__SNW
+    );
+    
+    
+// Update Main table with CW rate
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.CW_RATE = t2.CW_RATE
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE" t2
+WHERE t1.OWNERID = t2.OWNERID;
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-9) - CREATE S3_CW TABLE, UPDATE MAIN @@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+
+// Calculate the CW Rate from Stage 3
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE_STAGE3"
+as (
+    SELECT Opp_Ownername__Snw, OWNERID, IMP_STAGENAME,
+    SUM(case when STAGENAME_CURRENT = 'Closed Lost' then 1 else 0 end) as TOTAL_CL,
+    SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C >= 1 then 1 else 0 end) as TOTAL_CW,
+    SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end) as TOTAL_CW_NO_SALESCREDIT,
+
+    SUM(case when STAGENAME_CURRENT = 'Disqualified' then 1 else 0 end) as TOTAL_DQ,
+    count(STAGENAME_CURRENT) as TOTAL_OPPS,
+    DIV0(SUM(case when STAGENAME_CURRENT = 'Closed Lost' then 1 else 0 end),  IFNULL(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0)) AS CL_RATIO,
+    DIV0(SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C >= 1 then 1 else 0 end), IFNULL(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0)) AS CW_RATIO,
+    DIV0(SUM(case when STAGENAME_CURRENT = 'Disqualified' then 1 else 0 end), IFNULL(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0)) AS DQ_RATIO
+
+    FROM 
+    (SELECT *, t1.STAGENAME as "STAGENAME_CURRENT", t2.STAGENAME as "IMP_STAGENAME" 
+     FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" t2
+    on t1.ID = t2.OPPORTUNITYID) t
+    --WHERE CLOSEDATE >= '10/1/2020' and CLOSEDATE <= '12/31/2020' and ISCLOSED = TRUE
+    WHERE CLOSEDATE >= $begindate and CLOSEDATE < $enddate and ISCLOSED = TRUE
+    AND IMP_STAGENAME = 'Stage 3: Business & Solution Alignment'
+    group by Opp_Ownername__Snw, OWNERID, IMP_STAGENAME
+    );
+    
+// Update Main table with Stage3 CW rate
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1."STAGE3_CW_RATE" = t2.CW_RATIO
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE_STAGE3" t2
+WHERE t1.OWNERID = t2.OWNERID;
+
+//SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE_STAGE3"
+//order by Opp_Ownername__Snw desc;
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-10) - CREATE AVG S3_CW TABLE, COMPARE @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+
+// Update main table with the AVG stage 3 CW rate for all reps
+// It may make more sense to compare reps against other reps in segment...**NOTE**
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+    SET STAGE3AVG_CW_RATE = (SELECT SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C >= 1 then 1 else 0 end)/
+                             NULLIF(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0) AS CW_RATIO 
+                            FROM 
+                            (SELECT *, t1.STAGENAME as "STAGENAME_CURRENT", t2.STAGENAME as "IMP_STAGENAME" FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP" t1
+                            left join "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" t2
+                            on t1.ID = t2.OPPORTUNITYID) t
+                            WHERE CLOSEDATE >= $begindate and CLOSEDATE < $enddate and ISCLOSED = TRUE
+                            AND IMP_STAGENAME = 'Stage 3: Business & Solution Alignment'
+                            AND (--OPPORTUNITY_OWNER_ROLE__C like '%AM%' or 
+                                 OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+                            group by IMP_STAGENAME);
+                            
+                            
+                            
+//
+
+// Measure the REP STAGE 3 CW RATE vs AVG CW RATE
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+    SET STAGE3_AVG_CW_COMPARE = case when STAGE3_CW_RATE >= STAGE3AVG_CW_RATE then 1
+                                     else STAGE3_CW_RATE / STAGE3AVG_CW_RATE end;
+                                     
+                                     
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-11) - CREATE AVG S3_CW_BYSEG(AE) TABLE @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_STAGE3AVG_CW_RATE_BYSEG_AE"
+as ( 
+SELECT IMP_STAGENAME,BEST_ACCTSEGMENT_AT_CLOSE__SNW, SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C >= 1 then 1 else 0 end)
+                                                        /NULLIF(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0) AS CW_RATIO 
+                            ,case when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'EC' then 'Emerging Commercial Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'MM' then 'Mid Market Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'EE' then 'Emerging Enterprise Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'LE' then 'Large Enterprise Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'AM' then 'AM - Commercial Sales'
+                                                        end as SegmentFullName
+                            ,case when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'EC' then 'AE - Emerging Commercial Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'MM' then 'AE - Mid Market Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'EE' then 'AE - Emerging Enterprise Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'LE' then 'AE - Large Enterprise Sales'
+                                                        when BEST_ACCTSEGMENT_AT_CLOSE__SNW = 'AM' then 'AM - Commercial Sales'
+                                                        end as AE_Segment_AssignmentName
+                            FROM 
+                            (SELECT *, t1.STAGENAME as "STAGENAME_CURRENT", t2.STAGENAME as "IMP_STAGENAME" FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP" t1
+                            left join "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" t2
+                            on t1.ID = t2.OPPORTUNITYID) t
+                            WHERE CLOSEDATE >= $begindate and CLOSEDATE < $enddate and ISCLOSED = TRUE
+                            AND IMP_STAGENAME = 'Stage 3: Business & Solution Alignment'
+                            AND (OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+                            group by IMP_STAGENAME, BEST_ACCTSEGMENT_AT_CLOSE__SNW);
+
+
+// Assign segment avgs to main table
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+    SET t1.STAGE3AVG_CW_RATE_BYSEG = t2.CW_RATIO
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_STAGE3AVG_CW_RATE_BYSEG_AE" t2
+WHERE  t1.OPPORTUNITY_OWNER_ROLE__C = t2.AE_Segment_AssignmentName;
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-12) - CREATE AVG S3_CW_BYAM TABLE @@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_STAGE3AVG_CW_RATE_BYSEG_AM"
+as ( 
+SELECT IMP_STAGENAME,'AM - Commercial Sales' as AM_Segment_AssignmentName, SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C >= 1 then 1 else 0 end)/NULLIF(count(STAGENAME_CURRENT) - SUM(case when STAGENAME_CURRENT = 'Closed Won' and SALES_CREDIT_ARR__C < 1 then 1 else 0 end),0) AS CW_RATIO 
+                            FROM 
+                            (SELECT *, t1.STAGENAME as "STAGENAME_CURRENT", t2.STAGENAME as "IMP_STAGENAME" FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP" t1
+                            left join "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" t2
+                            on t1.ID = t2.OPPORTUNITYID) t
+                            WHERE CLOSEDATE >= $begindate and CLOSEDATE < $enddate and ISCLOSED = TRUE
+                            AND IMP_STAGENAME = 'Stage 3: Business & Solution Alignment'
+                            AND (OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+                            group by 1,2);
+                            
+// Assign AM S3 CW Rate avgs to main table
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+    SET t1.STAGE3AVG_CW_RATE_BYSEG = t2.CW_RATIO
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_STAGE3AVG_CW_RATE_BYSEG_AM" t2
+WHERE  t1.OPPORTUNITY_OWNER_ROLE__C = t2.AM_Segment_AssignmentName;                            
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-13) - COMPARE ROLE SPECIFIC S3_CW @@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// Measure the REP STAGE 3 CW RATE vs AVG CW RATE BY segment
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+    SET STAGE3_AVG_CW_COMPARE_BYSEG = STAGE3_CW_RATE / STAGE3AVG_CW_RATE_BYSEG;
+// UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+//    SET STAGE3_AVG_CW_COMPARE_BYSEG = case when STAGE3_CW_RATE >= STAGE3AVG_CW_RATE_BYSEG then 1
+//                                     else STAGE3_CW_RATE / STAGE3AVG_CW_RATE_BYSEG end;                                    
+                                  
+    
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-14) - MAP REP QUOTA, CALC PIPELINE GOAL @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// Map Quota's from Google Sheet
+// THIS MUST BE CHANGED to the CORRECT QUARTER @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@//
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET REP_QUOTA = t2.Q3
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_AE_QUOTAMAPPING" t2
+WHERE t1.OWNERID = t2.SF_ID;
+
+// Calculate the Pipeline Factor
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET REP_PIPELINEGOAL = (case when t1.OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Commercial Sales' then $pipelinefactor_EC
+                                                        when t1.OPPORTUNITY_OWNER_ROLE__C = 'AE - Mid Market Sales' then $pipelinefactor_MM
+                                                        when t1.OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Enterprise Sales' then $pipelinefactor_EE
+                                                        when t1.OPPORTUNITY_OWNER_ROLE__C = 'AE - Large Enterprise Sales' then $pipelinefactor_LE
+                                                        when t1.OPPORTUNITY_OWNER_ROLE__C = 'AM - Commercial Sales' then $pipelinefactor_AM
+                                                        else 0 
+                                                        end)*REP_QUOTA;
+
+//UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+//SET REP_PIPELINEGOAL = $pipelinefactor*REP_QUOTA;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET REP_QUARTER_ATTAINMENT = DIV0(REP_QUARTERLY_ATTAINMENT,REP_QUOTA),
+    REP_QUARTER_ATTAINMENT_ARR = DIV0(REP_QUARTERLY_ATTAINMENT_ARR,REP_QUOTA);
+//set pipelinefactor_EC = 3;
+//set pipelinefactor_MM = 3.5;
+//set pipelinefactor_EE = 3.5;
+//set pipelinefactor_LE = 3.5;
+//set pipelinefactor_AM = 2.5;
+//OPPORTUNITY_OWNER_ROLE__C
+--WORKINGHERE
+--@@@@@@@@@@@@@@@@@@@@@@@@@--
+//set begindate = '1/1/2021';
+//set enddate = '4/1/2021';
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-15) - CALC OPP CREATION/BEST RELATIONSHIP @@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// Calculate Opps created by Rep
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_OPPCREATION"
+as (
+  select OPP_OWNERNAME__SNW, OWNERID,count(*) as TotalOppsOwned, 
+  SUM(CASE  WHEN OWNERID = createdbyid THEN 1
+            else 0 end) as TotalOpps_CreatedByOwner,
+    SUM(CASE  WHEN OWNERID = BEST_RELATIONSHIP_UPON_OPP_CREATION__C THEN 1
+            else 0 end) as TotalOppsOwned_BestRelationship
+  FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+  where CREATEDDATE >= $begindate and CREATEDDATE < $enddate
+  And TYPE in ('New Business' , 'Upsell','Renewal') 
+  group by OPP_OWNERNAME__SNW,  OWNERID
+  order by OPP_OWNERNAME__SNW, OWNERID
+  asc);
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_OPPCREATION";
+
+// update total opps and opps created 
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.OPPS_OWNED = t2.TotalOppsOwned,
+    t1.OPPS_SELF_GEN = t2.TotalOpps_CreatedByOwner,
+    t1.OPPS_BEST_RELATIONSHIP = t2.TotalOppsOwned_BestRelationship
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_OPPCREATION" t2
+WHERE t1.OWNERID = t2.OWNERID;
+
+//@@@ maybe add the delta for owned and not best or created
+
+ 
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-16) - CALC PIPELINE BY BEST RELATIONSHIP @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+//set begindate = '1/1/2021';
+//set enddate = '4/1/2021';
+
+// calculate self generated pipeline baased on best relationship at time of creation in quarter regardless of ownership
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE"
+as (    
+    select  OPP_BESTRELATIONSHIP_CREATIONNAME__SNW, BEST_RELATIONSHIP_UPON_OPP_CREATION__C,
+    sum(SALES_CREDIT_ARR__C) as SALES_CREDIT_PIPELINE
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CREATEDDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    group by 1, 2
+    order by 1, 2  
+    asc);
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED_TABLE_2"
+as ( 
+     select  OPP_BESTRELATIONSHIP_CREATIONNAME__SNW, BEST_RELATIONSHIP_UPON_OPP_CREATION__C,
+    SALES_CREDIT_ARR__C, name
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CREATEDDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+  and SALES_CREDIT_ARR__C> 0
+);
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED_TABLE_2"
+order by 1,4;
+
+
+// update total opps and opps created 
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.SELF_GEN_PIPELINE_CQ = SALES_CREDIT_PIPELINE
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE" t2
+WHERE t1.OWNERID = t2.BEST_RELATIONSHIP_UPON_OPP_CREATION__C;
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-17) - CALC & COMPARE SELFGEN PIPELINE GOAL @@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+// set pipeline goal
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.SELF_GEN_PIPELINE_GOAL = REP_PIPELINEGOAL*$selfgen_pipelinefactor;
+
+// compare pipeline goal to self gen (best relationship)
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.PERCENT_SELF_GEN = div0(SELF_GEN_PIPELINE_CQ,SELF_GEN_PIPELINE_GOAL);
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN";
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-18) - CALC PIPELINE SELFGEN WITH BEST RELATIONSHIP @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+// @@@@@@@@@@@ CREATE PIPELINE OWNED WHERE REP IS BEST RELATIONSHIP
+// @@@@@@@@@@@ CREATE SELF GENERATED BEST RELATIONSHIP PIPELINE is OWENED
+//set begindate = '1/1/2021';
+//set enddate = '4/1/2021';
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED"
+as (    
+    select  OPP_BESTRELATIONSHIP_CREATIONNAME__SNW, BEST_RELATIONSHIP_UPON_OPP_CREATION__C,
+    sum(SALES_CREDIT_ARR__C) as SALES_CREDIT_PIPELINE
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CREATEDDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    AND OWNERID = BEST_RELATIONSHIP_UPON_OPP_CREATION__C
+    group by 1, 2
+    order by 1, 2  
+    asc);
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED_TABLE"
+as ( 
+    select  OPP_BESTRELATIONSHIP_CREATIONNAME__SNW, BEST_RELATIONSHIP_UPON_OPP_CREATION__C,
+    SALES_CREDIT_ARR__C, NAME
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CREATEDDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    AND OWNERID = BEST_RELATIONSHIP_UPON_OPP_CREATION__C
+);
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED_TABLE";
+
+// update total opps and opps created 
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.SELF_GEN_PIPELINE_CQ_OWNED = SALES_CREDIT_PIPELINE
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE_OWNED" t2
+WHERE t1.OWNERID = t2.BEST_RELATIONSHIP_UPON_OPP_CREATION__C;
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@ (TOC-19) - CALC PIPELINE OWNED IN QUARTER @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED"
+as ( 
+
+SELECT OPP_OWNERNAME__SNW, OWNERID,
+ OPPORTUNITY_OWNER_ROLE__C,
+    sum(Case when Quarter(CLOSEDATE) >= 1 then  SALES_CREDIT_ARR__C else 0 END) as Q1_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 2 then  SALES_CREDIT_ARR__C else 0 END) as Q2_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 3 then  SALES_CREDIT_ARR__C else 0 END) as Q3_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 4 then  SALES_CREDIT_ARR__C else 0 END) as Q4_PipelineOwned
+    --Quarter(CLOSEDATE) as QUARTER
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+WHERE CLOSEDATE >= '7/1/2021' --and CLOSEDATE <= '12/31/2021'
+and createddate < '10/1/2021' 
+--and stagename <> 'Disqualified'
+and SALES_CREDIT_ARR__C >= 1
+and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+group by 1,2,3
+order by 1
+);
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED";
+
+ // update max pipeline owned
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.REP_MAXPIPELINEOWNED = t2.Q3_PipelineOwned
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED" t2
+WHERE t1.OWNERID = t2.OWNERID;
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-20) - CALC PIPELINE OWNED IN Q BEST RELATIONSHIP @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED_BESTRELATIONSHIP"
+as ( 
+
+SELECT OPP_OWNERNAME__SNW, OWNERID,
+ OPPORTUNITY_OWNER_ROLE__C,
+    sum(Case when Quarter(CLOSEDATE) >= 1 then  SALES_CREDIT_ARR__C else 0 END) as Q1_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 2 then  SALES_CREDIT_ARR__C else 0 END) as Q2_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 3 then  SALES_CREDIT_ARR__C else 0 END) as Q3_PipelineOwned,
+    sum(Case when Quarter(CLOSEDATE) >= 4 then  SALES_CREDIT_ARR__C else 0 END) as Q4_PipelineOwned
+    --Quarter(CLOSEDATE) as QUARTER
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+WHERE CLOSEDATE >= '7/1/2021' --and CLOSEDATE <= '12/31/2021'
+and createddate < '10/1/2021' 
+--and stagename <> 'Disqualified'
+and SALES_CREDIT_ARR__C >= 1
+and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+and (OWNERID = BEST_RELATIONSHIP_UPON_OPP_CREATION__C)
+group by 1,2,3
+order by 1
+);
+
+
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED_BESTRELATIONSHIP";
+
+ // update max pipeline owned
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.REP_MAXPIPELINEOWNED_BESTRELATIONSHIP = t2.Q3_PipelineOwned
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED_BESTRELATIONSHIP" t2
+WHERE t1.OWNERID = t2.OWNERID;
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-21) - CALC PIPELINE OWNED ATTAINMENT @@@@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+//UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+//SET t1.Lean = Q4;
+
+//updated pipeline attainment goal
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.REP_PIPELINEOWNED_ATTAINMENT = DIV0(REP_MAXPIPELINEOWNED, REP_PIPELINEGOAL);
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-22) - CALC PIPELINE OWNED BEST REL RATE @@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" t1
+SET t1.REP_PIPELINEOWNED_BESTRELATIONSHIP_RATE = DIV0(REP_MAXPIPELINEOWNED_BESTRELATIONSHIP, REP_MAXPIPELINEOWNED);
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MASTER"
+as ( 
+
+
+ SELECT *, case when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Commercial Sales' then 1
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Mid Market Sales' then 2
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Enterprise Sales' then 3
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Large Enterprise Sales' then 4
+              when OPPORTUNITY_OWNER_ROLE__C = 'AM - Commercial Sales' then 5 end as report_order
+ FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+ WHERE (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C is null)
+ and OWNERID not in ('0055A00000BFGddQAH' --exclude lisa zhang, moved roles
+                     ,'0055A00000BQRKQQA5' -- exclude Salina Vang, let go
+                     ,'0055A000008NWBzQAO' -- exclude EC Molly Profile
+                    )
+ORDER BY case when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Commercial Sales' then 1
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Mid Market Sales' then 2
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Enterprise Sales' then 3
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Large Enterprise Sales' then 4
+              when OPPORTUNITY_OWNER_ROLE__C = 'AM - Commercial Sales' then 5 end asc
+
+, OPP_OWNERNAME__SNW );
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_AE_SKILLWILL_MASTER"
+as ( SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MASTER");
+
+
+  
+
+ 
+ 
+select listagg(OPP_OWNERNAME__SNW, ' ')
+    from "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MASTER";
+    
+    select listagg(OPP_OWNERNAME__SNW, ', ')
+    from (
+            SELECT OPP_OWNERNAME__SNW
+            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+            LEFT JOIN     "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+            on t1.ownerid =  t2.id
+            where OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%'
+            -- MANUALLY EXCLUDE ANY PEOPLE
+            and OWNERID not in ('0055A00000BFGddQAH' --exclude lisa zhang, moved roles
+                             ,'0055A00000BQRKQQA5' -- exclude Salina Vang, let go
+                             ,'0055A000008NWBzQAO' -- exclude EC Molly Profile
+                    )
+     and isactive = true
+    group by OPP_OWNERNAME__SNW
+    );
+    
+    
+    SELECT OPP_OWNERNAME__SNW
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    LEFT JOIN     "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    on t1.ownerid =  t2.id
+    where OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%'
+    -- MANUALLY EXCLUDE ANY PEOPLE
+    and OWNERID not in ('0055A00000BFGddQAH' --exclude lisa zhang, moved roles
+                     ,'0055A00000BQRKQQA5' -- exclude Salina Vang, let go
+                     ,'0055A000008NWBzQAO' -- exclude EC Molly Profile
+                    )
+    --and isactive = true
+    group by OPP_OWNERNAME__SNW;
+
+SELECT 
+REP_QUARTERLY_ATTAINMENT
+,REP_QUOTA
+,REP_QUARTER_ATTAINMENT
+,* FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MASTER";
+
+
+ SELECT OPP_OWNERNAME__SNW, OWNERID, OPPORTUNITY_OWNER_ROLE__C,MANAGER_NAME,
+        REP_QUOTA, REP_QUARTERLY_ATTAINMENT, REP_QUARTER_ATTAINMENT,
+        CW_RATE, STAGE3_CW_RATE, STAGE3AVG_CW_RATE_BYSEG,STAGE3_AVG_CW_COMPARE_BYSEG,
+        REP_PIPELINEGOAL,REP_MAXPIPELINEOWNED,REP_PIPELINEOWNED_ATTAINMENT,
+        REP_MAXPIPELINEOWNED_BESTRELATIONSHIP,REP_PIPELINEOWNED_BESTRELATIONSHIP_RATE,
+        SELF_GEN_PIPELINE_GOAL,SELF_GEN_PIPELINE_CQ,  PERCENT_SELF_GEN,
+        OPPS_OWNED, OPPS_BEST_RELATIONSHIP, OPPS_SELF_GEN, report_order,
+        REP_QUARTERLY_ATTAINMENT_ARR, REP_QUARTER_ATTAINMENT_ARR
+ FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MASTER";
+
+set begindate = '1/1/2021';
+set enddate = '4/1/2021';
+    select id, name, OPP_BESTRELATIONSHIP_CREATIONNAME__SNW, BEST_RELATIONSHIP_UPON_OPP_CREATION__C, OPP_OWNERNAME__SNW,OPP_CREATEDBY_NAME__SNW,
+    SALES_CREDIT_ARR__C
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILWILL_OPP_TMP"
+    where CREATEDDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and OPP_BESTRELATIONSHIP_CREATIONNAME__SNW like '%Chen%';
+
+
+
+
+ SELECT OPP_OWNERNAME__SNW, OWNERID, OPPORTUNITY_OWNER_ROLE__C,MANAGER_NAME,
+        REP_QUOTA, REP_QUARTERLY_ATTAINMENT, REP_QUARTER_ATTAINMENT,
+        CW_RATE, STAGE3_CW_RATE,STAGE3AVG_CW_RATE, STAGE3_AVG_CW_COMPARE, STAGE3_AVG_CW_COMPARE_BYSEG,STAGE3_AVG_CW_COMPARE_BYSEG
+        REP_PIPELINEGOAL,REP_MAXPIPELINEOWNED,REP_PIPELINEOWNED_ATTAINMENT,
+        SELF_GEN_PIPELINE_GOAL,SELF_GEN_PIPELINE, 
+        OPPS_OWNED, OPPS_SELF_GEN, PERCENT_SELF_GEN, case when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Commercial Sales' then 1
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Mid Market Sales' then 2
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Enterprise Sales' then 3
+              when OPPORTUNITY_OWNER_ROLE__C = 'AE - Large Enterprise Sales' then 4
+              when OPPORTUNITY_OWNER_ROLE__C = 'AM - Commercial Sales' then 5 end as report_order
+ FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN"
+ WHERE (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C is null)
+ and OWNERID not in ('0055A00000BFGddQAH' --exclude lisa zhang, moved roles
+                     ,'0055A00000BQRKQQA5' -- exclude Salina Vang, let go
+                     ,'0055A000008NWBzQAO' -- exclude EC Molly Profile
+                    )
+ORDER BY REP_QUARTER_ATTAINMENT desc ;
+
+
+
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_CW_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3AVG_CW_RATE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_AVG_CW_COMPARE FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3AVG_CW_RATE_BYSEG FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_MAIN" ADD STAGE3_AVG_CW_COMPARE_BYSEG FLOAT;
+
+
+
+// DROP Temporary Table
+DROP TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE";
+DROP TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_CW_RATE_STAGE3";
+DROP TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_OPPCREATION";
+DROP TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_SELF_GEN_PIPELINE";
+DROP TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_SKILLWILL_PIPELINEOWNED";
+
+
+set begindate = '1/1/2021';
+set enddate = '4/1/2021';
+//set quotaquarter = "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_AE_QUOTAMAPPING".'Q1';
+
+SELECT SALES_CREDIT_ARR__C, createddate, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE OPP_BESTRELATIONSHIP_CREATIONNAME__SNW like '%Crane%';
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_STAGE3AVG_CW_RATE_BYSEG";
+
+
+SELECT HIGHESTSTAGE_REACHED, STAGENAME, 
+* FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+on t1.id = t2.OPPORTUNITYID
+WHERE OPP_OWNERNAME__SNW like '%Frank%'
+and closedate >= '4/1/2021'
+and closedate < '7/1/2021'
