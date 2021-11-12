@@ -1,0 +1,909 @@
+
+
+
+
+
+//select count(*)
+//FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY";
+//
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE"
+//WHERE CONTACTID = '0035A00003hvz0rQAA';
+
+// Return a list of opportunities where the primary contact is populated
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_withPCs"
+as(
+  SELECT t2.CONTACTID as primary_contact, isprimary, t1.* 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join (SELECT * 
+             FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+             WHERE ISPRIMARY = TRUE) t2
+  on t1.ID = t2.OPPORTUNITYID
+  order by t1.ID, t2.contactid
+);
+//SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_withPCs";
+
+// find a list of opportunities with multiple primary contacts 
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_MultiplePCs"
+as (  
+  SELECT closedate, t1.id, count(t2.CONTACTID) as ct_primary_contact
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join (SELECT * 
+             FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+             WHERE ISPRIMARY = TRUE) t2
+  on t1.ID = t2.OPPORTUNITYID
+  group by 1,2
+  having  count(t2.CONTACTID) > 1
+  order by closedate desc
+);
+//SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_MultiplePCs";
+
+
+
+// find a list of opportunities with single primary contacts 
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs"
+as(
+  SELECT t2.CONTACTID as primary_contact, isprimary, t1.* 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join (SELECT * 
+             FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+             WHERE ISPRIMARY = TRUE) t2
+  on t1.ID = t2.OPPORTUNITYID
+  WHERE t1.ID not in (SELECT ID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_MultiplePCs")
+  order by t1.ID, t2.contactid
+);
+
+
+// exclude any opportunities where the primary contact is null
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs_NoNulls"
+as(
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs"
+  where PRIMARY_CONTACT is not null
+  and type = 'New Business'
+);
+
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs_NoNulls";
+
+
+// Filter Data set to be from a specific date range
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_Final"
+
+as(
+SELECT PRIMARY_CONTACT, ISPRIMARY, ID, ACCOUNTID, NAME, STAGENAME, CLOSEDATE,CREATEDDATE,TYPE, ARR__C, NEW_ARR__C,
+  createddate as OPP_CREATEDDATE,
+  S0_REACHED,
+  S1_REACHED,
+  S2_REACHED,
+  S3_REACHED,
+  S4_REACHED,
+  S5_REACHED,
+  CW_REACHED,
+  CL_REACHED,
+  DQ_REACHED
+  FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs_NoNulls" t1
+  LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+  on t1.ID = t2.OPPORTUNITYID
+where createddate >= '6/1/2020'
+  );
+  
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_Final";
+SELECT 1 as rpt_order, '# of Opps ' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+UNION
+SELECT 2 as rpt_order, 'Opps Associated with PrimaryContact(duplicate bc PCs)' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_withPCs"
+UNION
+SELECT 3 as rpt_order, 'Opps Associated with multiple PrimaryContacts' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_MultiplePCs"
+UNION
+SELECT 4 as rpt_order, 'Opps Associated with single PrimaryContacts' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs"    
+UNION
+SELECT 5 as rpt_order, 'New Biz Opps, single PrimaryContacts, no Null' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_SinglePCs_NoNulls"    
+UNION
+SELECT 6 as rpt_order, '# of opps in Period(createdDate)' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_Final"    
+   
+   ;
+--WHERE isprimary = true;
+//
+//SELECT * 
+//           FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+//           WHERE ISPRIMARY = TRUE
+//           order by opportunityid, contactid;
+//           
+           
+// find all p1 Campaign members
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1a"
+as (
+ SELECT  
+  'P1A' as Marketing_PRank
+  ,t2.name as CampaignName
+  ,case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+ ,t3.name as ContactName
+ ,t1.name as CampaignMemberName
+ ,t1.createddate as CampaignMemberCreatedDate
+ ,t3.createddate as ContactCreatedDate
+ ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+ ,t1.Status
+ ,t3.LASTACTIVITYDATE
+ ,Campaign_Follow_Up_Needed__c
+ ,t1.ID as CampaignMemberID
+ ,t2.ID as CampaignID
+ ,t3.ID as ContactID
+  ,t1.leadid
+  ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+  ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+  ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+  ,t1.CAMPAIGN_TERM_UTM_TERM__C
+  ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+  ,t2.type as CAMPAIGN_MEMBER_TYPE
+  ,t2.CAMPAIGN_TYPE_GROUPING__C
+  ,t4.name as AccountName
+  ,t4.EMPLOYEE_BAND__C
+  ,t4.CUSTOMER_START_DATE__C
+  ,t4.Type as ACCOUNT_TYPE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+on t1.CAMPAIGNID = t2.ID
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+on t1.contactid = t3.id 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+on t3.accountid = t4.id
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t4
+//on t3.ID = t4. 
+WHERE t1.FIRSTRESPONDEDDATE >= '4/1/2020'
+and (t2.NAME like '%Contact Us%'
+     or (
+         t2.name like '%AppExchange'
+            and t2.name like '%Demo%'
+         )
+-- filter duplicates out
+or (t2.name in ('G2 Crowd - Demo Request', 'Web - G2 Crowd - Demo Request'))
+or (t2.name like '%Demo Request%') )
+and t2.NAME not in ('Web - Inquiry Demo Request SFDC AppExchange', 'Web - Inquiry Installs SFDC AppExchange')
+order by 2,1
+ );
+
+SELECT CampaignName, count(*) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1a"
+group by 1;
+
+// find all p1 Campaign members
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d"
+as (
+ SELECT  
+  'P1B' as Marketing_PRank
+  ,t2.name as CampaignName
+  ,case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+ ,t3.name as ContactName
+ ,t1.name as CampaignMemberName
+ ,t1.createddate as CampaignMemberCreatedDate
+ ,t3.createddate as ContactCreatedDate
+ ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+ ,t1.Status
+ ,t3.LASTACTIVITYDATE
+ ,Campaign_Follow_Up_Needed__c
+ ,t1.ID as CampaignMemberID
+ ,t2.ID as CampaignID
+ ,t3.ID as ContactID
+  ,t1.leadid
+  ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+  ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+  ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+  ,t1.CAMPAIGN_TERM_UTM_TERM__C
+  ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+  ,t2.type as CAMPAIGN_MEMBER_TYPE
+  ,t2.CAMPAIGN_TYPE_GROUPING__C
+  ,t4.name as AccountName
+  ,t4.EMPLOYEE_BAND__C
+  ,t4.CUSTOMER_START_DATE__C
+  ,t4.Type as ACCOUNT_TYPE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+on t1.CAMPAIGNID = t2.ID
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+on t1.contactid = t3.id 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+on t3.accountid = t4.id
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t4
+//on t3.ID = t4. 
+WHERE t1.FIRSTRESPONDEDDATE >= '4/1/2020'
+and
+      (t2.NAME in ('Web - Inquiry Installs SFDC', 'Web - Inquiry Installs SFDC AppExchange - Engagement',
+                    '1810 SFDC AppExchange Installs')
+         )
+  
+-- filter duplicates out
+and t2.NAME not in ('Web - Inquiry Demo Request SFDC AppExchange', 'Web - Inquiry Installs SFDC AppExchange')
+order by 2,1
+ );
+ 
+// select campaignname FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d" group by 1;
+
+SELECT CampaignName, count(*) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d"
+group by 1;
+
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1b"
+as (
+ SELECT  
+  'P2' as Marketing_PRank
+  ,t2.name as CampaignName
+  ,case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+ ,t3.name as ContactName
+ ,t1.name as CampaignMemberName
+ ,t1.createddate as CampaignMemberCreatedDate
+ ,t3.createddate as ContactCreatedDate
+ ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+ ,t1.Status
+ ,t3.LASTACTIVITYDATE
+ ,Campaign_Follow_Up_Needed__c
+ ,t1.ID as CampaignMemberID
+ ,t2.ID as CampaignID
+ ,t3.ID as ContactID
+  ,t1.leadid
+  ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+  ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+  ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+  ,t1.CAMPAIGN_TERM_UTM_TERM__C
+  ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+    ,t2.type as CAMPAIGN_MEMBER_TYPE
+  ,t2.CAMPAIGN_TYPE_GROUPING__C
+  ,t4.name as AccountName
+  ,t4.EMPLOYEE_BAND__C
+  ,t4.CUSTOMER_START_DATE__C
+  ,t4.Type as ACCOUNT_TYPE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+on t1.CAMPAIGNID = t2.ID
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+on t1.contactid = t3.id 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+on t3.accountid = t4.id
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t4
+//on t3.ID = t4. 
+WHERE t1.FIRSTRESPONDEDDATE >= '4/1/2020'
+  and t1.ID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1a")
+  and t1.ID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d")
+and (t2.NAME like '%P2%'
+     OR (t2.type = 'Appointment Setting' and t1.Status in ('Meeting Occurred','Meeting Scheduled'))
+     OR (t2.type like 'ABM' and t1.Status in ('Engaged'))
+     OR (t2.type like 'Direct Mail' and t1.Status in ('Delivered'))
+     OR (t2.type like 'eGift' and t1.Status in ('Used'))
+     OR (t2.type like 'Event - Field' and t1.Status in ('Attended'))
+     OR (t2.type like 'Event - Field Exec' and t1.Status in ('Attended'))
+     OR (t2.type like 'Event - Meeting' and t1.Status in ('Scheduled'))
+     OR (t2.type like 'Event - Session' and t1.Status in ('Attended'))
+     OR (t2.type like 'Event - Tradeshow' and t1.Status in ('Visited Booth', 'Hot Lead'))
+     OR (t2.type like 'Nurture' and t1.Status in ('Engaged'))
+     OR (t2.type like 'OpsStars - Meeting' and t1.Status in ('Scheduled'))
+     OR (t2.type like 'Sponsored Webinar' and t1.Status in ('Attended', 'Attended On-demand'))
+     OR (t2.type like 'Virality' and t1.Status in ('Engaged'))
+     OR (t2.type like 'Virtual Event' and t1.Status in ('Attended', 'Attended On-demand'))
+     OR (t2.type like 'Web' and t1.Status in ('Engaged'))
+     OR (t2.type like 'Webinar' and t1.Status in ('Attended', 'Attended On-demand'))
+    )
+order by 2,1
+  );
+  
+  
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1c"
+as (
+      SELECT  
+      'P3' as Marketing_PRank
+      ,t2.name as CampaignName
+      ,case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+     ,t3.name as ContactName
+     ,t1.name as CampaignMemberName
+     ,t1.createddate as CampaignMemberCreatedDate
+     ,t3.createddate as ContactCreatedDate
+     ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+     ,t1.Status
+     ,t3.LASTACTIVITYDATE
+     ,Campaign_Follow_Up_Needed__c
+     ,t1.ID as CampaignMemberID
+     ,t2.ID as CampaignID
+     ,t3.ID as ContactID
+      ,t1.leadid
+      ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+      ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+      ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+      ,t1.CAMPAIGN_TERM_UTM_TERM__C
+      ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+        ,t2.type as CAMPAIGN_MEMBER_TYPE
+      ,t2.CAMPAIGN_TYPE_GROUPING__C
+      ,t4.name as AccountName
+      ,t4.EMPLOYEE_BAND__C
+      ,t4.CUSTOMER_START_DATE__C
+  ,t4.Type as ACCOUNT_TYPE
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+    on t1.CAMPAIGNID = t2.ID
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+    on t1.contactid = t3.id 
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+    on t3.accountid = t4.id
+    //left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t4
+    //on t3.ID = t4. 
+    WHERE t1.FIRSTRESPONDEDDATE >= '4/1/2020'
+    -- campaign member ID not in P1 or P2
+    and t1.ID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1a")
+    and t1.ID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1b")
+    and t1.ID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d")
+  
+    
+    order by 2,1
+  );
+  
+
+
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+as (
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1a"
+  UNION 
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1d"
+UNION 
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1b"
+UNION 
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1c"
+);
+
+SELECT * FROM 
+ "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+ WHERE CAMPAIGNMEMBERID 
+ in(
+   SELECT CAMPAIGNMEMBERID from(
+SELECT CAMPAIGNMEMBERID, count(*) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+group by 1
+having count(*) >1))
+order by CAMPAIGNMEMBERID;
+
+// How many p1 campaign members
+---SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1";
+--SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1c";
+
+// how many p1 campaign members w
+--SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1" where contactid is not null;
+
+// filter test accounts and contacts, also filter null contacts
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+as (
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+  where UPPER(ACCOUNTNAME) not like '%LEANDATA%'
+    --and UPPER(ACCOUNTNAME) not like '%TEST%'
+    and UPPER(CONTACTNAME) not like '%LEANDATA%'
+    and UPPER(CONTACTNAME) not like '%HOT DOG BRO%'
+  and UPPER(CONTACTNAME) not like '%TEST%'
+  and contactname is not null
+  );
+
+// how many clean campaign members are available 
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+order by CONTACTID;
+
+
+
+
+
+
+
+
+
+//// HERE is an example of duplicate campaign members on multiple campaigns with the same first campaign member responded date
+//(
+//SELECT *,
+//rank () over (partition by CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE,CAMPAIGNMEMBERCREATEDDATE desc) as rank
+//FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+//  where contactid ='0035A00003p4rUnQAI'
+//order by contactid);
+//
+//
+//// Do we have any duplicate campaign members?????
+//SELECT CONTACTID,ContactName, CAMPAIGNID,CampaignName, count(*)
+//FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+//group by 1,2,3,4
+//having count(*) > 1
+//order by count(*) desc;
+//
+
+// create a table for contactids with duplicate campaign members (use to filter main dataset)
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_ContactsWithDupCMEM"
+as (
+  SELECT DISTINCT CONTACTID , MARKETING_PRANK
+FROM (
+SELECT CONTACTID,CAMPAIGNID, MARKETING_PRANK
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+group by 1,2,3
+having count(*) > 1
+order by count(*) desc)
+);
+
+--SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_ContactsWithDupCMEM";
+
+
+
+
+
+
+// return main dataset WITHOUT ContactIDs with duplicate campaign members 
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3"
+as (
+  SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+  where contactid not in (SELECT CONTACTID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_ContactsWithDupCMEM")
+);
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3a"
+as (SELECT *,
+    case when CUSTOMER_START_DATE__C is null then TRUE
+     when date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) < date(CUSTOMER_START_DATE__C) then TRUE ELSE FALSE END as FirstRespondedBeforeCustomerStartDate
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3"
+    );
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3b"
+as (SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3a"
+    WHERE FirstRespondedBeforeCustomerStartDate = TRUE
+    );
+   
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3b";
+
+// SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3c"
+as (SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3a"
+    WHERE FirstRespondedBeforeCustomerStartDate = FALSE
+    );
+   
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3c";
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4a"
+as (SELECT case when CAMPAIGNMEMBERFIRSTRESPONSEDATE > CREATEDDATE then TRUE ELSE FALSE END as CampaignInfluenceAfterOpp,
+            abs(date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) - date(CREATEDDATE)) as respondeddate_vs_oppcreation,
+           case when abs(date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) - date(CREATEDDATE)) > 60 then TRUE ELSE FALSE END as CampaignInfluenceOver60Days,
+           --case when CUSTOMER_START_DATE__C is null then TRUE
+            --    when date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) < date(CUSTOMER_START_DATE__C) then TRUE ELSE FALSE END as FirstRespondedBeforeCustomerStartDate,
+   
+    * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_Final" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3b" t2
+  on t1.PRIMARY_CONTACT = t2.CONTACTID
+  where contactid is not null);
+
+
+//SELECT *
+//from "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4a"
+//where CampaignInfluenceOver60Days = TRUE
+//order by id, CAMPAIGNMEMBERFIRSTRESPONSEDATE;
+
+//Exclude the campaign members where the first responded date over 60 days before the opportuny is created
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4b"
+as (
+    SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4a"
+        WHERE CampaignInfluenceOver60Days = FALSE
+  );
+
+//// Did the campaign member respond before the company became a customer
+//CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4c"
+//as (
+//    SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4b"
+//        WHERE FirstRespondedBeforeCustomerStartDate = TRUE
+//  );
+//
+//SELECT CAMPAIGNMEMBERID, ACCOUNTID, id,  ACCOUNT_TYPE, * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4c";
+//
+//// Did the campaign member respond after the company became a customer
+//CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4d"
+//as (
+//    SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4b"
+//        WHERE FirstRespondedBeforeCustomerStartDate = FALSE
+//  );
+//
+//SELECT CAMPAIGNMEMBERID, ACCOUNTID, id,  ACCOUNT_TYPE, * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4d";
+
+//Exclude the campaign members where the first responded date is after the opportunity has already been created 
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp5"
+as (  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4b"
+  where CAMPAIGNINFLUENCEAFTEROPP = FALSE);
+ 
+ 
+//SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp5" order by contactid;
+  
+  
+ 
+
+  
+  
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+as (SELECT rank () over (partition by ID, CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE asc,CAMPAIGNMEMBERCREATEDDATE asc) as rank --p1_priority desc,
+                       , * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp5");   
+
+//  SELECT MARKETING_PRANK as tmp_pRank,   * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+//  where id = '0065A00001bwZlPQAU'
+//  order by id, marketing_prank, rank;  
+//  
+//SELECT MARKETING_PRANK as tmp_pRank, * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+//where MARKETING_PRANK = 'P2'
+// and rank = 1
+//  order by id, marketing_prank, rank;  
+//  
+//  SELECT id, CAMPAIGNMEMBERFIRSTRESPONSEDATE, campaignmembercreateddate, rank, MARKETING_PRANK as tmp_pRank FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+//  where id in (SELECT ID from "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+//  group by id
+//  having count(ID) >1);
+  
+  
+  
+  
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+as (  
+SELECT * 
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+where rank = 1);
+  
+  
+ -- SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7";
+  
+  
+ 
+  --where name like '%Piano%';
+  
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_P1_Analysis_tmp7"
+as
+(
+    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+);
+
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_Lead2Opp_Analysis"
+as
+(
+    SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_P1_Analysis_tmp7"
+);
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_Lead2Opp_Journey"
+as
+(
+SELECT 1 as rpt_order, 
+    '# of Campaign Members in Period' as title, 
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"
+UNION
+SELECT 2 as rpt_order,  
+    '# of Campaign Members WITHOUT ContactID' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"where contactid is null
+UNION
+SELECT 3 as rpt_order,  
+    '# of Campaign Members WITH ContactID' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT,  
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp1"where contactid is not null
+UNION
+SELECT 4 as rpt_order,  
+    '# of Campaign Members, excluding test accts/contacts' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT,  
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp2"
+UNION
+SELECT 5 as rpt_order,  
+    '# of Campaign Members with duplicate members' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    from "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_ContactsWithDupCMEM"
+UNION
+SELECT 6 as rpt_order,  
+    '# of Campaign Members excluding duplicate members' as title,
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3"
+  
+UNION
+SELECT 7 as rpt_order,  
+    '# of Campaign Members responded before first date as customer' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3b"
+UNION
+SELECT 8 as rpt_order,  
+    '# of C_Mems w/Opps, associated with opp(has dups)' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4a"
+UNION
+SELECT 9 as rpt_order,  
+    '# of C_Mems w/Opps, exclude 60 day range(has dups)' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp4b"
+UNION
+SELECT 10 as rpt_order,  
+    '# of C_Mems w/Opps, exclude post opp campaign(has dups)' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp5"
+UNION
+SELECT 11 as rpt_order,  
+    '# of C_Mems w/Opps, apply ranks to C_Mems(has dups)' as title,  
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp6"
+UNION
+SELECT 12 as rpt_order,  
+    '# of C_Mems w/Opps, rank 1 only' as title,
+    count_IF(MARKETING_PRANK='P1A') as P1A_CT, 
+    count_IF(MARKETING_PRANK='P1B') as P1B_CT, 
+    count_IF(MARKETING_PRANK='P2') as P2_CT, 
+    count_IF(MARKETING_PRANK='P3') as P3_CT 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+order by rpt_order
+  );  
+  
+  
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_Lead2Opp_Journey"
+  order by rpt_order;
+SELECT MARKETING_PRANK, 
+    --case when upper(CAMPAIGNNAME) like '%APPEXCHANGE%' then TRUE else FALSE end as AppExchangeCampaign,
+    --CAMPAIGN_TYPE_GROUPING__C,
+    CAMPAIGN_MEMBER_TYPE,
+    CAMPAIGN_SOURCE_UTM_SOURCE__C,
+    CAMPAIGN_MEDIUM_UTM_MEDIUM__C, 
+    count(*)
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+
+group by 1,2,3,4
+order by 1,2,3,4;
+
+SELECT CAMPAIGNNAME
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+group by CAMPAIGNNAME
+order by CAMPAIGNNAME;
+  
+  
+  
+SELECT  abs(date(CREATEDDATE)-date(CAMPAIGNMEMBERFIRSTRESPONSEDATE)) as LeadToOppDays,
+date(CREATEDDATE)-date(CAMPAIGNMEMBERFIRSTRESPONSEDATE),
+*
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+order by LeadToOppDays desc;
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN"
+WHERE NAME like '%P2%'
+limit 100;
+
+SELECT TYPE FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN"
+group by 1;
+
+// Do P2
+// Everything else by P2 
+// 60 days before 
+
+
+SELECT * FROM
+    (
+    SELECT  date_trunc('MONTH', closedate) as TRUNCATED2MONTH, EMPLOYEE_BAND__C, COUNT(*)  as ct
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+    group by 1,2
+    order by 1,2)
+PIVOT
+(
+SUM(ct)
+  FOR TRUNCATED2MONTH
+)
+;
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7"
+WHERE EMPLOYEE_BAND__C is null;
+
+
+SELECT DISTINCT ID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp7";
+  
+  
+  case when CampaignInfluenceAfterOpp = FALSE then rank () over (partition by ID, CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE desc,CAMPAIGNMEMBERCREATEDDATE desc) else null end as rank,
+  
+
+
+---------- block here
+
+SELECT *,
+rank () over (partition by CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE,CAMPAIGNMEMBERCREATEDDATE desc) as rank
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3"
+order by contactname;
+
+// Rank campaigns associated with contacts based on most recent response date
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp2"
+as (
+SELECT *,
+rank () over (partition by CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE,CAMPAIGNMEMBERCREATEDDATE desc) as rank
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3"
+order by contactid)
+;
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp2"
+where contactid = '0035A00003p4rUnQAI';
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp3"
+as (
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp2"
+where rank = 1
+and contactid is not null
+);
+
+select contactid, count(*) from "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp3"
+group by 1;
+
+SELECT campaignname 
+from "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analyst_tmp3"
+
+
+
+
+
+
+// campaign members not associated to a contact
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact"
+where contactname is null;
+
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t2
+on t1.CONTACTID = t2.CONTACTID
+where isprimary = TRUE
+order by 2,1;
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP"
+as (
+SELECT t1.*, t2.isprimary, t3.ID, t3.Name, t3.closedate, t3.arr__C, t3.stagename, t3.createddate FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t2
+on t1.CONTACTID = t2.CONTACTID
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t3
+on t2.OpportunityID = t3.id
+where isprimary = TRUE and 
+t3.type = 'New Business'
+  and closedate >='10/1/2020'
+order by 1, 3,2
+  );
+  
+  
+  
+ 
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP_Dedup"
+as (
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP" t1
+  left join (SELECT ID as DUPLICATE FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP"
+              group by id
+              having count(*) >1) t2
+  on t1.ID = t2.DUPLICATE
+  ); 
+ 
+
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP_Dedup"
+where id = '0065A00001bwN3PQAU';
+ 
+ SELECT DISTINCT ID, NAME, ARR__C, stagename, closedate, year(closedate) as CLOSEYEAR,createddate FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_CMEM_to_Contact_to_OPP_Dedup";
+
+ 
+ SELECT t3.id, count(*)
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t4
+on t3.id  = t4.contactid
+group by 1
+having count(*) > 1
+order by name desc
+
+limit 1000;
+//on t3.ID = t4. 
+
+// return a list of contact roles with duplicate contact IDs
+SELECT CONTACTID,count(*)
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE"
+WHERE ISPRIMARY = TRUE
+group by 1
+having count(*) > 1;
+
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE"
+WHERE CONTACTID IN (SELECT CONTACTID
+                    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE"
+                    group by 1
+                    having count(*) > 1)
+order by CONTACTID, createddate;
+
+
+SELECT t2.TYPE, CAMPAIGNMEMBERRECORDTYPEID, CAMPAIGN_TYPE_GROUPING__C FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER" t1 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+on t1.CAMPAIGNID = t2.id
+group by 1,2,3
+LIMIT 10; 
+
+
+// ACTION ITEMS
+
+// Clean opps with multiple or duplicate primary contacts
+// duplicate campaign members  
+    SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_Opps_Final" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."SNW_P1_Analysis_tmp3" t2
+  on t1.PRIMARY_CONTACT = t2.CONTACTID
+  where contactid is null
+  order by id desc;
+  
+  
+  SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+  
+  SELECT * 
+             FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+             WHERE ISPRIMARY = TRUE;
+   
+ 
+SELECT 
+    case when CURRENT_ACCTSEGMENT__SNW in ('LE','EE') then 'Enterprise' else 'Commercial' end as Grouped_Segment,
+    CURRENT_ACCTSEGMENT__SNW, 
+    case when CURRENT_ACCTSEGMENT__SNW = 'EC' then 'Emerging Commercial'
+        when CURRENT_ACCTSEGMENT__SNW = 'MM' then 'Middle Market'
+        when CURRENT_ACCTSEGMENT__SNW = 'EE' then 'Emerging Enterprise'
+        when CURRENT_ACCTSEGMENT__SNW = 'LE' then 'Large Enterprise' end as Full_Segment_Name,
+        NUMBEROFEMPLOYEES,
+    t2.CONTACTID as primary_contact,
+    t1.ID as OPP_ID,
+
+    --DG_PERSONA__C, 
+    t4.name as LEANDATA__MATCHED_BUYER_PERSONA,
+    t3.TITLE,
+    t3.JOB_ROLE__C,
+    ZI_CALCULATED_MANAGEMENT_LEVEL__C,
+    VIRALITY_OPPORTUNITY__C,
+    isprimary as ISPRIMARY_CONTACT,
+    t5.name as ACCT_NAME,
+    T1.NAME as OPP_NAME,
+    T3.FIRSTNAME as CONTACT_FIRSTNAME,
+    t3.LASTNAME AS CONTACT_LASTNAME,
+    CLOSEDATE,
+    ARR__C,
+
+    INDUSTRY,
+    SUB_INDUSTRY__C --, t1.* 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join (SELECT * 
+             FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" 
+             WHERE ISPRIMARY = TRUE) t2
+  on t1.ID = t2.OPPORTUNITYID
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+  on t2.CONTACTID = t3.ID
+  left join "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_LEANDATA__BUYER_PERSONA__C" t4
+  on t3.LEANDATA__MATCHED_BUYER_PERSONA__C = t4.id
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t5
+  on t1.ACCOUNTID = t5.ID
+  WHERE t1.TYPE = 'New Business'
+  and t1.stagename = 'Closed Won'
+  and closedate >= '1/1/2020'
+  and isprimary = TRUE
+  --and CONTACTID in ('0035A00003KFCAwQAP', '0035A00003Rw5xTQAR', '0035A00003nV1NCQA0', '0035A00003fBs54QAC','0035A00003fWlN9QAK')
+
+
+;
+
+
+drop table "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY_TMP2";
