@@ -1,0 +1,298 @@
+
+-- Find the renewal OPPS $$$ in SFDC
+SELECT 
+ID,NAME,
+CLOSEDATE,
+ARR__C,
+NEW_ARR__C,
+QUOTE_ARR__C,
+EXPIRING_REVENUE__C,
+EXPIRING_ACV__C,
+GROWTH_CALCULATED__C,
+GROWTH_AMOUNT__C
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+where CLOSEDATE >= '1/1/2021'
+and CLOSEDATE <= '3/31/2021'
+and stagename = 'Closed Won'
+and type = 'Renewal';
+
+
+-- Find 2021 Renewals $$ in Larrys data
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance" t1
+WHERE "Close Year" = '2021'
+and "Type" = 'Renewal';
+
+--base join
+SELECT *
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18";
+
+
+--month to month comparison SFDC vs Finance
+SELECT month(CLOSEDATE) as Month, SUM(NEW_ARR__C) as SFDC, SUM(t2."Growth") as Finance,
+SUM(t2."Growth") - SUM(NEW_ARR__C) as delta
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+group by 1;
+
+
+-- WHERE Does New ARR in SFDC not equal Finance growth???
+SELECT ID, ifnull(t2."Growth",0)-NEW_ARR__C,  NAME, AMOUNT, CLOSEDATE, ARR__C, NEW_ARR__C, EXPIRING_REVENUE__C,EXPIRING_ACV__C, GROWTH_CALCULATED__C,GROWTH_AMOUNT__C,
+T2."Close Date", t2."ARR", t2."Expiring ACV", t2."New", t2."Upsell", t2."Growth"
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE abs(NEW_ARR__C - ifnull(T2."Growth",0))>10000
+order by month(closedate) asc, abs(NEW_ARR__C - T2."Growth") desc;
+
+
+
+
+
+-- can we calculate larry's number?
+
+SELECT 
+
+month(closedate) as month,
+sum(NEW_ARR__C) as SFDC_NEW_ARR, sum(t2."Growth") FINANCE_RENEWAL_GROWTH_WITHEXPRARR,
+sum(case when t2."ARR">ifnull(t2."Expiring Revenue",0) then t2."ARR"-ifnull(t2."Expiring Revenue",0) end) as Finance_GrowthWithEXPR_REV,
+sum(t2."Growth Booking") as FINANCE_RENEWAL_GROWTH_WITHEXPRACV,
+sum(GROWTH_CALCULATED__C), sum(GROWTH_AMOUNT__C), --SFDC GROWTH FIELS ARE WEIRD
+sum(case when ARR__C>ifnull(EXPIRING_REVENUE__C,0) then ARR__C-ifnull(EXPIRING_REVENUE__C,0) end) as RevGrowthWithEXPR_REV,
+sum(case when ARR__C>ifnull(EXPIRING_ACV__C,0) then ARR__C-ifnull(EXPIRING_ACV__C,0) end) as RevGrowthwithEXP_ACV
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE CLOSEDATE >= '1/1/2021'
+and CLOSEDATE <= '3/31/2021'
+group by 1;
+
+
+--ARR Revenue diff
+SELECT ID, ifnull(t2."Growth",0)-NEW_ARR__C,  NAME, AMOUNT, CLOSEDATE, ARR__C, NEW_ARR__C, EXPIRING_REVENUE__C,  t2."Expiring Revenue", EXPIRING_ACV__C, GROWTH_CALCULATED__C,GROWTH_AMOUNT__C,
+T2."Close Date", t2."ARR", t2."Expiring ACV", t2."New", t2."Upsell", t2."Growth"
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE --abs(NEW_ARR__C - ifnull(T2."Growth",0))>0
+ARR__C <> t2."ARR" --or 
+--EXPIRING_REVENUE__C <> t2."Expiring Revenue"
+order by month(closedate) asc, abs(NEW_ARR__C - T2."Growth") desc;
+
+
+
+--Expiring Revenue diff
+SELECT ID, 
+  t2."Expiring Revenue"- EXPIRING_REVENUE__C, 
+  t2."Expiring Revenue"-EXPIRING_ACV__C,
+
+ifnull(t2."Growth",0)-NEW_ARR__C,  NAME, EXPIRING_REVENUE__C,  t2."Expiring Revenue"
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE --abs(NEW_ARR__C - ifnull(T2."Growth",0))>0
+--ARR__C <> t2."ARR" or 
+EXPIRING_ACV__C <> t2."Expiring Revenue"
+order by month(closedate) asc, abs(NEW_ARR__C - T2."Growth") desc;
+
+
+
+
+SELECT ID,
+case when ARR__C>EXPIRING_REVENUE__C then ARR__C-EXPIRING_REVENUE__C else 0 end as RevGrowthWithEXPR_REV,
+case when ARR__C>EXPIRING_ACV__C then ARR__C-EXPIRING_ACV__C else 0 end as RevGrowthwithEXP_ACV,
+t2."Growth"-NEW_ARR__C,  NAME, AMOUNT, CLOSEDATE, ARR__C, NEW_ARR__C, EXPIRING_REVENUE__C,EXPIRING_ACV__C, GROWTH_CALCULATED__C,GROWTH_AMOUNT__C,
+T2."Close Date", t2."ARR", t2."Expiring ACV", t2."New", t2."Upsell", t2."Growth"
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE CLOSEDATE >= '1/1/2021'
+and CLOSEDATE <= '1/30/2021'
+order by month(closedate) asc, abs(NEW_ARR__C - T2."Growth") desc;
+
+SELECT ID,
+case when ARR__C>EXPIRING_REVENUE__C then ARR__C-EXPIRING_REVENUE__C else 0 end as RevGrowthWithEXPR_REV,
+case when ARR__C>EXPIRING_ACV__C then ARR__C-EXPIRING_ACV__C else 0 end as RevGrowthwithEXP_ACV,
+EXPIRING_ACV__C - EXPIRING_REVENUE__C as EXP_ARR_VS_CONTRACT_ARR,
+ifnull(t2."Growth",0)-NEW_ARR__C,  NAME, AMOUNT, CLOSEDATE, ARR__C, NEW_ARR__C, EXPIRING_REVENUE__C,EXPIRING_ACV__C, GROWTH_CALCULATED__C,GROWTH_AMOUNT__C,
+T2."Close Date", t2."ARR", t2."Expiring ACV", t2."New", t2."Upsell", t2."Growth"
+FROM
+  (SELECT 
+    ID,NAME,
+    AMOUNT,
+    CLOSEDATE,
+    ARR__C,
+    NEW_ARR__C,
+    QUOTE_ARR__C,
+    EXPIRING_REVENUE__C,
+    EXPIRING_ACV__C,
+    GROWTH_CALCULATED__C,
+    GROWTH_AMOUNT__C
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal') t1
+full join 
+  (SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+  WHERE "Close Year" = '2021'
+  and "Type" = 'Renewal') t2
+on t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE CLOSEDATE >= '1/1/2021'
+and CLOSEDATE <= '3/31/2021'
+and ( (case when ARR__C>EXPIRING_ACV__C then ARR__C-EXPIRING_ACV__C else 0 end) <> ifnull(t2."Growth",0)
+    or EXPIRING_ACV__C<>EXPIRING_REVENUE__C)
+order by month(closedate) asc, abs(NEW_ARR__C - T2."Growth") desc;
+
+SELECT t1.id as OPP_ID, t1.name, NEW_ARR__C, GROWTH_AMOUNT__C, type, CLOSEDATE, t2.id as QUOTE_ID, t3.id as QUOTELINE_ID, GROWTH_QUANTITY__C, EXCLUDE_FROM_NEW__C, SBQQ__PRIMARY__C,
+'https://leandata.my.salesforce.com/' || t3.id  as LINK
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTE__C" t2
+ on t1.ID = t2.SBQQ__OPPORTUNITY2__C
+ left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C" t3
+ on t2.ID = t3.SBQQ__QUOTE__C
+  where CLOSEDATE >= '1/1/2021'
+  and CLOSEDATE <= '3/31/2021'  
+  and stagename = 'Closed Won'
+  and type = 'Renewal'
+  and SBQQ__PRIMARY__C = TRUE
+  and t3.GROWTH_QUANTITY__C > 0
+  and EXCLUDE_FROM_NEW__C <> TRUE
+  and t1.NEW_ARR__C <> 0
+  and t1.GROWTH_AMOUNT__C <> 0
+  order by 1
