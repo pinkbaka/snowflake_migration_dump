@@ -1,0 +1,62 @@
+SELECT 
+ID,
+CREATEDDATE, CLOSEDATE, 
+YEAR(CREATEDDATE), YEAR(CLOSEDATE),
+QUARTER(CREATEDDATE), QUARTER(CLOSEDATE),
+STAGENAME,
+CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+      AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+      AND STAGENAME in ('Closed Won', 'Closed Lost', 'Disqualified')
+    THEN TRUE ELSE FALSE END as CreateClosedSameQTR, 
+CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+      AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+      AND STAGENAME in ('Closed Won')
+    THEN TRUE ELSE FALSE END as CreateClosedWonSameQTR, 
+CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+      AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+      AND STAGENAME in ('Closed Lost', 'Disqualified')
+    THEN TRUE ELSE FALSE END as CreateClosedLostSameQTR 
+
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+order by CreateClosedSameQTR DESC, CreateClosedWonSameQTR DESC;
+
+CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_CCSAMEQTR()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+  
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPS_CREATECLOSE_SAMEQTR"
+                          as 
+                          (SELECT 
+                            ID,
+                            CREATEDDATE, CLOSEDATE, 
+                            YEAR(CREATEDDATE) as CREATEDDATE_YEAR, YEAR(CLOSEDATE) as CLOSEDATE_YEAR,
+                            QUARTER(CREATEDDATE) as CREATEDDATE_QTR, QUARTER(CLOSEDATE) as CLOSEDATE_QTR,
+                            STAGENAME,
+                            CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+                                  AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+                                  AND STAGENAME in ('Closed Won', 'Closed Lost', 'Disqualified')
+                                THEN TRUE ELSE FALSE END as CreateClosedSameQTR, 
+                            CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+                                  AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+                                  AND STAGENAME in ('Closed Won')
+                                THEN TRUE ELSE FALSE END as CreateClosedWonSameQTR, 
+                            CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE)
+                                  AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE)
+                                  AND STAGENAME in ('Closed Lost', 'Disqualified')
+                                THEN TRUE ELSE FALSE END as CreateClosedLostSameQTR 
+
+                         FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+                         ORDER BY CreateClosedSameQTR DESC, CreateClosedWonSameQTR DESC)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+  return 'Done.';
+  $$;
+
+
+CALL usp_ETL_MTLLOADPRE_CCSAMEQTR();
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPS_CREATECLOSE_SAMEQTR";
+  
