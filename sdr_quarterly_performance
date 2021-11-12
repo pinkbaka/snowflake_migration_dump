@@ -1,0 +1,563 @@
+//set begindate = '7/1/2020';
+//set enddate = '10/1/2020';
+set begindate = '7/1/2021';
+set enddate = '10/1/2021';
+
+//SELECT OPP_CREATEDBY_NAME__SNW,CREATED_BY_ROLE__C, NAME, CREATEDBYID, CREATEDDATE, FIRST_CALL_DATE__C, FIRST_CALL_RESULT__C,
+//    TYPE, LEADSOURCE, AMOUNT, EXPECTEDREVENUE, CLOSEDATE, STAGENAME, 
+//    OPP_OWNERNAME__SNW, OWNERID,OPPORTUNITY_OWNER_ROLE__C 
+//FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+//WHERE CREATED_BY_ROLE__C like '%SDR%'
+//AND FIRST_CALL_DATE__C >= $begindate AND FIRST_CALL_DATE__C < $enddate
+//AND FIRST_CALL_RESULT__C = 'Completed'
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" 
+WHERE NAME IN (
+SELECT NAME FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" 
+group by name
+having count(*) > 1 )
+order by name;
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE"
+as (
+SELECT OPP_CREATEDBY_NAME__SNW, CREATEDBYID, CREATED_BY_ROLE__C, count(*) SDR_OPPS_CREATED, SUM(case when STAGENAME <> 'Disqualified' Then 1 else 0 end) OPPS_NOT_DQED,
+RANK() OVER(PARTITION BY OPP_CREATEDBY_NAME__SNW ORDER BY COUNT(*) desc) as ROLERANK
+FROM
+
+(SELECT OPP_CREATEDBY_NAME__SNW,CREATED_BY_ROLE__C, NAME, CREATEDBYID, CREATEDDATE, FIRST_CALL_DATE__C, FIRST_CALL_RESULT__C,
+    TYPE, LEADSOURCE, AMOUNT, EXPECTEDREVENUE, CLOSEDATE, STAGENAME, 
+    OPP_OWNERNAME__SNW, OWNERID,OPPORTUNITY_OWNER_ROLE__C 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE CREATED_BY_ROLE__C like '%SDR%'
+AND FIRST_CALL_DATE__C >= $begindate AND FIRST_CALL_DATE__C < $enddate
+AND FIRST_CALL_RESULT__C = 'Completed') t
+GROUP BY OPP_CREATEDBY_NAME__SNW, CREATEDBYID, CREATED_BY_ROLE__C
+ORDER BY OPP_CREATEDBY_NAME__SNW
+);
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE";
+set begindate = '1/1/2021';
+set enddate = '4/1/2021';
+
+
+SELECT id, OPP_CREATEDBY_NAME__SNW,CREATED_BY_ROLE__C, NAME, CREATEDBYID, CREATEDDATE, FIRST_CALL_DATE__C, FIRST_CALL_RESULT__C,
+    TYPE, LEADSOURCE, AMOUNT, EXPECTEDREVENUE, CLOSEDATE, STAGENAME, 
+    OPP_OWNERNAME__SNW, OWNERID,OPPORTUNITY_OWNER_ROLE__C 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE TYPE = 'New Business'
+ AND FIRST_CALL_DATE__C >= $begindate AND FIRST_CALL_DATE__C < $enddate
+ AND CREATED_BY_ROLE__C like '%SDR%'
+ AND FIRST_CALL_RESULT__C = 'Completed'
+  and CREATED_BY_ROLE__C like '%Mid%'
+  and CREATED_BY_ROLE__C not like '%Inactive%'
+  order by name desc;
+  
+  
+SELECT year(createddate), OPP_OWNERNAME__SNW, count(*) FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE OPPORTUNITY_OWNER_ROLE__C is null
+group by 1,2
+order by 1,2 asc;
+
+set begindate = '1/1/2021';
+set enddate = '4/1/2021';
+SELECT OPP_CREATEDBY_NAME__SNW, count(*)
+FROM(
+SELECT OPP_CREATEDBY_NAME__SNW,CREATED_BY_ROLE__C, NAME, CREATEDBYID, CREATEDDATE, FIRST_CALL_DATE__C, FIRST_CALL_RESULT__C,
+    TYPE, LEADSOURCE, AMOUNT, EXPECTEDREVENUE, CLOSEDATE, STAGENAME, 
+    OPP_OWNERNAME__SNW, OWNERID,OPPORTUNITY_OWNER_ROLE__C 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE TYPE = 'New Business'
+ AND FIRST_CALL_DATE__C >= $begindate AND FIRST_CALL_DATE__C < $enddate
+ AND CREATED_BY_ROLE__C like '%SDR%'
+ AND FIRST_CALL_RESULT__C = 'Completed'
+  --and CREATED_BY_ROLE__C like '%Mid%'
+  ) t
+  group by 1;
+
+SELECT* FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE2"
+as (
+select OPP_CREATEDBY_NAME__SNW, case when ROLERANK = 1 then CREATEDBYID end as ID_WITH_MOST_OPPS, case when ROLERANK = 1 then CREATED_BY_ROLE__C end as ROLE_WITH_MOST_OPPS
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE"
+WHERE ID_WITH_MOST_OPPS is not null and ROLE_WITH_MOST_OPPS is not null
+);
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_MAIN"
+as (
+SELECT t1.OPP_CREATEDBY_NAME__SNW, t1.ID_WITH_MOST_OPPS,ROLE_WITH_MOST_OPPS, t2.SDR_OPPS_CREATED, t2.OPPS_NOT_DQED   
+FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE2" t1
+left join 
+(SELECT OPP_CREATEDBY_NAME__SNW, SUM(SDR_OPPS_CREATED) as SDR_OPPS_CREATED, SUM(OPPS_NOT_DQED) as OPPS_NOT_DQED
+FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_PRE" group by 1) t2
+on t1.OPP_CREATEDBY_NAME__SNW = t2.OPP_CREATEDBY_NAME__SNW
+);
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_MAIN";
+
+
+set begindate = '7/1/2021';
+set enddate = '10/1/2021';
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE"
+as (
+    SELECT NAME,OWNERID,  ROLE, MANAGERID,
+    sum(case when TYPE = 'Call' then 1 else 0 end) as Calls,
+    sum(case when TYPE = 'Email' then 1 else 0 end) as Emails,
+    sum(case when TYPE not in ('Call', 'Email') then 1 else 0 end) as Other,
+    count(*) as Total,
+    RANK() OVER(PARTITION BY NAME ORDER BY COUNT(*) desc) as ROLERANK
+    FROM (
+    SELECT t1.OWNERID, t2.NAME as NAME,t1.CREATEDDATE,t3.NAME as ROLE, t1.type, MANAGERID FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK" t1
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    on t1.OWNERID = t2.ID
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t3
+    on t2.USERROLEID = t3.ID
+    WHERE t1.ACTIVITYDATE >= $begindate AND t1.ACTIVITYDATE < $enddate
+    AND t1.STATUS = 'Completed'
+    AND Subject not like '%[Opened]%' and Subject not like '%[In]%'
+    ) t
+    WHERE ROLE like '%SDR%'
+
+    group by NAME,OWNERID,  ROLE, MANAGERID
+    ORDER by NAME
+);
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE";
+
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE" ADD MANAGER_NAME VARCHAR(200);
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE" t1
+set MANAGER_NAME = t2.NAME
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+WHERE t1.MANAGERID = t2.ID;
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE" order by role, name;
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+as (
+SELECT case when name = 'Kyle McCroskey (Inactive)' then 'Kyle McCroskey' --Kyle McCroskey
+            when name = 'Ryan Bruno Inbound' then 'Ryan Bruno'--Ryan Bruno
+            when name = 'Kiah Knox (Old User)' then 'Kiah Knox'--Kiah Knox
+            when name = 'Teddy Claiborne (Inbound)' then 'Teddy Claiborne'--Teddy Claiborne
+            when name = 'Wesley Cheng (Inbound)' then 'Wesley Cheng'--Wesley Cheng
+            else name end as rollup_name, 
+       case when OWNERID = '0055A00000ApT4oQAF' then '0055A00000BG69LQAT' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then '0055A00000BFdkmQAD' --Ryan Bruno
+            when OWNERID = '0055A00000Apa7zQAB' then '0056e00000BuCrhAAF' --Kiah Knox
+            when OWNERID = '0056e00000AgQr9AAF' then '0056e00000BTVXYAA5' --Teddy Claiborne
+            when OWNERID = '0056e00000AgYs5AAF' then '0056e00000BTVXTAA5' --Wesley Cheng
+  
+  
+  
+            else OWNERID end as rollup_OWNERID, 
+        case when OWNERID = '0055A00000ApT4oQAF' then 'SDR - Emerging Commercial Sales' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then 'SDR - Emerging Commercial Sales'--Ryan Bruno
+            else ROLE end as rollup_ROLE, 
+        case when OWNERID = '0055A00000ApT4oQAF' then 'Ed Faso' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then 'Ed Faso'--Ryan Bruno
+            else MANAGER_NAME end as rollup_MANAGER_NAME, 
+name, ownerid, role, calls, emails, other, total
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE" 
+order by name, ownerid
+  );
+  
+  SELECT ROLLUP_NAME, ROLLUP_OWNERID, ROLLUP_ROLE, rollup_MANAGER_NAME,
+  SUM(CALLS) as CALLS,
+  SUM(EMAILS) as EMAILS,
+  SUM(OTHER) as OTHER,
+  SUM(TOTAL) as TOTAL,
+  MIN(case  when ROLLUP_ROLE like '%Inbound%' then 0
+            when ROLLUP_ROLE like '%Emerging Commercial%' then 1
+            when ROLLUP_ROLE like '%Mid Market%' then 2
+            when ROLLUP_ROLE like '%Emerging Enterprise%' then 3
+            when ROLLUP_ROLE like '%Large Enterprise%' then 4
+            else 5 end) as RPT_order
+  FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+  where ROLLUP_NAME not in ('Sean Lakshan','Alex Sucala', 'Trent Rhoades [Inactive]','Anna Ayrapetyan','Rob Simmons')
+  group by 1,2,3,4
+  order by RPT_order,1;
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+as (
+    SELECT NAME,OWNERID,  ROLE
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE"
+    WHERE ROLERANK = 1
+);
+
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+//order by name;
+//
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN"
+as (SELECT t1.NAME, t1.OWNERID, t1.ROLE, EMAILS, CALLS, TOTAL
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2" t1
+    left join (SELECT NAME, SUM(EMAILS) as EMAILS, SUM(CALLS) as CALLS, SUM(TOTAL) as TOTAL
+               FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE"
+               group by NAME) t2
+    on t1.NAME = t2.NAME
+    );
+    
+    
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN"
+order by name;
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT"
+as (
+    SELECT *  FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."SDR_LIST_MAIN" t2
+    ON t1.name = t2.OPP_CREATEDBY_NAME__SNW
+    );
+    
+
+    
+    
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" ADD MEETING_QUOTA FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" ADD STAGE1_QUOTA FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" ADD MEETING_ATTAINMENT FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" ADD STAGE1_ATTAINMENT FLOAT;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" ADD ACTIVE BOOLEAN;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" t1
+SET t1.MEETING_QUOTA = t2."Q4 MEETINGS",
+    t1.STAGE1_QUOTA = t2."Q4 STAGE1 QUOTA",
+    t1.ACTIVE = t2.ACTIVE
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_SDR_MAPPING" t2
+WHERE t1.OWNERID = t2.SF_ID;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT" 
+SET MEETING_ATTAINMENT = SDR_OPPS_CREATED/MEETING_QUOTA,
+    STAGE1_ATTAINMENT = OPPS_NOT_DQED/STAGE1_QUOTA;
+
+
+    SELECT NAME, OWNERID,
+    CASE WHEN ROLE like '%Enterprise%' then 'Anaclaudia Cervantes'
+         WHEN ROLE like '%Commercial%' then 'Ed Faso'
+    ELSE 'Ernesto Castillo' END AS MANAGER,
+    ROLE, MEETING_QUOTA, SDR_OPPS_CREATED, MEETING_ATTAINMENT, STAGE1_QUOTA, OPPS_NOT_DQED, STAGE1_ATTAINMENT, CALLS, EMAILS 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_MAIN_OUTPUT"
+    WHERE not (ACTIVE is NULL or ACTIVE = FALSE)
+    order by ROLE, name;
+    
+
+
+
+
+
+set begindate = '1/1/2021';
+set enddate = '4/1/2021';
+
+SELECT
+  case when BEST_RELATIONSHIP_UPON_OPP_CREATION__C <> SDR_v2__c then TRUE else FALSE end as Need_SDR_Audit,
+  case when BEST_RELATIONSHIP_UPON_OPP_CREATION__C <> SDR_v2__c 
+          AND OPP_BESTRELATIONSHIP_CREATIONNAME__SNW = t2.NAME 
+      then TRUE else FALSE end as PotentialRoleChange,
+  case when UPPER(OPP_BESTRELATIONSHIP_CREATIONNAME__SNW) like '%INACTIVE%' 
+      then TRUE else FALSE end as BestRelationshipInactive,
+  t1.ID as OpportunityID, t1.NAME as Opp_Name,t2.NAME as SDR_Name,  OPP_BESTRELATIONSHIP_CREATIONNAME__SNW,
+BEST_RELATIONSHIP_UPON_OPP_CREATION__C, SDR_v2__c, t1.CREATEDDATE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_USER" t2
+on t1.SDR_v2__c = t2.ID
+WHERE SDR_V2__C is not null
+AND t1.CREATEDDATE >= $begindate AND t1.CREATEDDATE < $enddate
+and Need_SDR_Audit
+order by Need_SDR_Audit desc, PotentialRoleChange asc, BestRelationshipInactive;
+
+//FROM HERE
+
+
+USE "PC_MATILLIONLOADER_DB";
+//
+
+set begindate = '7/1/2021';
+set enddate = '10/1/2021';
+
+-- Does this action 
+-- Joins these tables
+-- Combines SDR Names
+-- Identify SDR Completed first calls in QPA quarter
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_CompleteFirstCalls_Base"
+as (
+
+
+SELECT t1.SDR_V2__C,   t3.firstname || ' ' || t3.lastname as SDR_Fullname,
+count(*) as Stage1_Opps
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t3
+on t1."SDR_V2__C" = t3.ID
+WHERE 
+    TYPE = 'New Business'
+          AND FIRST_CALL_DATE__C >= '7/1/2021'
+      AND FIRST_CALL_DATE__C < '10/1/2021'
+      AND FIRST_CALL_RESULT__C in ('Completed','Complete - Qualified')
+group by 1,2
+order by 2 asc
+);
+
+
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_CompleteFirstCalls_Base";
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Base"
+as (
+SELECT t1.SDR_V2__C, t2.name,  t3.firstname || ' ' || t3.lastname as SDR_Fullname,
+count(*) as Opps_Created
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t3
+on t1.SDR_V2__C = t3.ID
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t2
+  on t3.USERROLEID = t2.ID
+WHERE 
+    TYPE = 'New Business'
+    AND t1.CREATEDDATE >= '7/1/2021'
+    AND t1.CREATEDDATE < '10/1/2021'
+    --AND CREATED_BY_ROLE__C like '%SDR%'
+    and t1.SDR_V2__C is not null
+  group by 1,2,3
+order by 3 asc
+);
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Base";
+
+
+
+
+
+//CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Grouped"
+//as (
+//    SELECT SDR_V2__C,SDR_ROLE__C,SDR_Fullname, count(*) as Opps_Created
+//    FROM  "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Base"
+//    group by SDR_V2__C,SDR_ROLE__C,SDR_Fullname
+//    order by SDR_ROLE__C,SDR_Fullname,SDR_V2__C
+//  );
+//
+//
+
+///jkhkjhkjh
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_ACTIVITY_Grouped"
+as (
+    SELECT NAME,OWNERID,  ROLE, MANAGERID,
+    sum(case when TYPE = 'Call' then 1 else 0 end) as Calls,
+    sum(case when TYPE = 'Email' then 1 else 0 end) as Emails,
+    sum(case when (TYPE not in ('Call', 'Email') or type is null) then 1 else 0 end) as Other,
+    count(*) as Total,
+    RANK() OVER(PARTITION BY NAME ORDER BY COUNT(*) desc) as ROLERANK
+    FROM (
+    SELECT t1.OWNERID, t2.NAME as NAME,t1.CREATEDDATE,t3.NAME as ROLE, t1.type, MANAGERID FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK" t1
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    on t1.OWNERID = t2.ID
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t3
+    on t2.USERROLEID = t3.ID
+    WHERE t1.ACTIVITYDATE >= $begindate AND t1.ACTIVITYDATE < $enddate
+    AND t1.STATUS = 'Completed'
+    AND Subject not like '%[Opened]%' and Subject not like '%[In]%'
+    AND (TYPE <>'Other' or TYPE is NULL)
+    and t3.name like '%SDR%'
+    ) t
+   WHERE NAME not in ('Rob Simmons','Fairy Hoang','Kyle McCroskey')
+   group by NAME,OWNERID,  ROLE, MANAGERID
+);
+
+
+
+
+
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_ACTIVITY_Grouped" ADD MANAGER_NAME VARCHAR(200);
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_ACTIVITY_Grouped" t1
+set MANAGER_NAME = t2.NAME
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+WHERE t1.MANAGERID = t2.ID;
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE1"
+AS
+(
+SELECT t1.*, t2.Stage1_Opps, t3.Opps_Created
+FROM  "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_ACTIVITY_Grouped" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_CompleteFirstCalls_Base" t2
+on t1.OWNERID = t2.SDR_V2__C
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Base" t3
+on t1.OWNERID = t3.SDR_V2__C
+)
+;
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE1";
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+as (
+SELECT case when name = 'Kyle McCroskey (Inactive)' then 'Kyle McCroskey' --Kyle McCroskey
+            when name = 'Ryan Bruno Inbound' then 'Ryan Bruno'--Ryan Bruno
+            when name = 'Kiah Knox (Old User)' then 'Kiah Knox'--Kiah Knox
+            when name = 'Teddy Claiborne (Inbound)' then 'Teddy Claiborne'--Teddy Claiborne
+            when name = 'Wesley Cheng (Inbound)' then 'Wesley Cheng'--Wesley Cheng
+            else name end as rollup_name, 
+       case when OWNERID = '0055A00000ApT4oQAF' then '0055A00000BG69LQAT' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then '0055A00000BFdkmQAD' --Ryan Bruno
+            when OWNERID = '0055A00000Apa7zQAB' then '0056e00000BuCrhAAF' --Kiah Knox
+            when OWNERID = '0056e00000AgQr9AAF' then '0056e00000BTVXYAA5' --Teddy Claiborne
+            when OWNERID = '0056e00000AgYs5AAF' then '0056e00000BTVXTAA5' --Wesley Cheng
+  
+  
+  
+            else OWNERID end as rollup_OWNERID, 
+        case when OWNERID = '0055A00000ApT4oQAF' then 'SDR - Emerging Commercial Sales' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then 'SDR - Emerging Commercial Sales'--Ryan Bruno
+            when OWNERID = '0055A00000Apa7zQAB' then 'SDR - Emerging Commercial Sales' --Kiah Knox
+            when OWNERID = '0056e00000AgQr9AAF' then 'SDR - Mid Market Sales' --Teddy Claiborne
+            when OWNERID = '0056e00000AgYs5AAF' then 'SDR - Emerging Commercial Sales' --Wesley Cheng
+            else ROLE end as rollup_ROLE, 
+        case when OWNERID = '0055A00000ApT4oQAF' then 'Ed Faso' --Kyle McCroskey
+            when OWNERID = '0055A00000BDaOUQA1' then 'Griffin Elrod'--Ryan Bruno
+            when OWNERID = '0055A00000Apa7zQAB' then 'Eric Cetinich'
+            else MANAGER_NAME end as rollup_MANAGER_NAME, 
+name, ownerid, role,STAGE1_OPPS,OPPS_CREATED,  calls, emails, other, total
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE1" 
+order by name, ownerid
+  );
+  
+  SELECT ROLLUP_OWNERID, ROLLUP_NAME, ROLLUP_ROLE, rollup_MANAGER_NAME,
+  SUM(STAGE1_OPPS) as STAGE1_OPPS,
+  SUM(OPPS_CREATED) as OPPS_CREATED,
+  SUM(CALLS) as CALLS,
+  SUM(EMAILS) as EMAILS,
+  SUM(OTHER) as OTHER,
+  SUM(TOTAL) as TOTAL,
+  MIN(case  when ROLLUP_ROLE like '%Inbound%' then 0
+            when ROLLUP_ROLE like '%Emerging Commercial%' then 1
+            when ROLLUP_ROLE like '%Mid Market%' then 2
+            when ROLLUP_ROLE like '%Emerging Enterprise%' then 3
+            when ROLLUP_ROLE like '%Large Enterprise%' then 4
+            else 5 end) as RPT_order
+  FROM "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE2"
+  where ROLLUP_NAME not in ('Sean Lakshan','Alex Sucala', 'Trent Rhoades [Inactive]',
+                            'Anna Ayrapetyan','Rob Simmons','CJ Hoever', 'David Richards')
+    and rollup_role not like '%Manager%'
+  group by 1,2,3,4
+  order by ROLLUP_MANAGER_NAME,RPT_ORDER,ROLLUP_NAME;
+
+
+SELECT ID, ACCOUNT_ID_15_TO_18__C
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"
+where left(ID,15) = '001i000000YJy5Y';
+
+SELECT ID, ACCOUNT_ID_15_TO_18__C
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"
+where left(ID,15) = '001i000000YJy5Y';
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_MASTEROUTPUT"
+as 
+(
+    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_CompleteFirstCalls_Grouped"
+);
+
+
+
+alter table  "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_MASTEROUTPUT"
+add
+  Opps_Created  integer,
+  Call_Activity  integer,
+  Email_Activity  integer,  
+  Other_Activity  integer,
+  Total_Activity  integer;
+//
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_MASTEROUTPUT";
+
+
+//
+//
+// `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+//                                SET t1.OPP_OWNERNAME__SNW = t2.NAME 
+//                                FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+//                                WHERE t1.OWNERID = t2.ID`;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_MASTEROUTPUT" t1
+SET t1.OPPS_CREATED = t2.Opps_Created
+FROM "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_OppsCreated_Grouped" t2
+where t1.SDR_V2__C = t2.SDR_V2__C;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_MASTEROUTPUT" t1
+SET t1.CALL_ACTIVITY = t2.Calls,
+    t1.EMAIL_ACTIVITY = t2.Emails,
+    t1.OTHER_ACTIVITY = t2.Other,
+    t1.TOTAL_ACTIVITY = t2.Total
+FROM "MTL_LOAD_PRE"."PUBLIC"."QPA_SDR_ACTIVITY_Grouped" t2
+where t1.SDR_V2__C = t2.OWNERID;
+
+
+
+
+SELECT SDR_ROLE__C, * FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE SDR_ROLE__C is null;
+    
+
+    
+set begindate = '4/1/2021';
+set enddate = '7/1/2021';
+    SELECT t1.id,t1.OWNERID, t2.NAME as NAME,t1.CREATEDDATE, REPORTING_CREATEDATE__C,t3.NAME as ROLE, t1.type, MANAGERID FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK" t1
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    on t1.OWNERID = t2.ID
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t3
+    on t2.USERROLEID = t3.ID
+    WHERE t1.REPORTING_CREATEDATE__C >= $begindate AND t1.REPORTING_CREATEDATE__C < $enddate
+      AND t1.STATUS = 'Completed'
+      AND Subject not like '%[Opened]%' and Subject not like '%[In]%'
+      AND (TYPE <>'Other' 
+           or TYPE is NULL
+          )
+      and t2.NAME not in ('Trent Rhoades','Derrick Furtado')
+      and t3.name like '%SDR%'
+    ORDER BY TYPE ;
+
+
+
+    WHERE ROLE like '%SDR%'
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SDR_ACTIVITY_PRE"
+as (
+    SELECT NAME,OWNERID,  ROLE, MANAGERID,
+    sum(case when TYPE = 'Call' then 1 else 0 end) as Calls,
+    sum(case when TYPE = 'Email' then 1 else 0 end) as Emails,
+    sum(case when TYPE not in ('Call', 'Email') then 1 else 0 end) as Other,
+    count(*) as Total,
+    RANK() OVER(PARTITION BY NAME ORDER BY COUNT(*) desc) as ROLERANK
+    FROM (
+    SELECT t1.OWNERID, t2.NAME as NAME,t1.CREATEDDATE,t3.NAME as ROLE, t1.type, MANAGERID FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK" t1
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    on t1.OWNERID = t2.ID
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t3
+    on t2.USERROLEID = t3.ID
+    WHERE t1.ACTIVITYDATE >= $begindate AND t1.ACTIVITYDATE < $enddate
+    AND t1.STATUS = 'Completed'
+    AND Subject not like '%[Opened]%' and Subject not like '%[In]%'
+    ) t
+    WHERE ROLE like '%SDR%'
+
+    group by NAME,OWNERID,  ROLE, MANAGERID
+    ORDER by NAME
+);
+
+
+ SELECT t2.NAME as NAME,t2.ID, t2.CREATEDDATE,t3.NAME as ROLE,MANAGERID,ISACTIVE 
+ ,case when role like '%Inbound%' then 1
+        when role like '%Emerging Commercial%' then 2
+        when role like '%Mid Market%' then 3
+        when role like '%Emerging Enter%' then 4
+        when role like '%Large Enter%' then 5 end as Role_Rank
+ 
+ 
+ FROM
+ "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER" t2
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE" t3
+    on t2.USERROLEID = t3.ID
+    WHERE t3.NAME like '%SDR%'
+    order by t2.createddate desc;
+    
