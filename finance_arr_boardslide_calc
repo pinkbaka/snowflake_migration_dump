@@ -1,0 +1,494 @@
+"TABLEAU_REPORTING"."PUBLIC"."SNW_DATE_DIM_Tmp"
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
+as (
+
+SELECT id, closedate,stagename, name, TYPE, ARR__C,EXPIRING_REVENUE__C, EXPIRING_ACV__C
+,case when type = 'New Business' then ARR__C end as NEW_ARR__FINANCE
+,case when type = 'Upsell' then ARR__C end as UPSELL_ARR__FINANCE
+,case when type = 'Growth Increase' then ARR__C 
+      when (type = 'Renewal' and ARR__C > EXPIRING_ACV__C) then  ARR__C - EXPIRING_ACV__C end as GROWTH_ARR__FINANCE2
+,case when type = 'Renewal' then 
+                                case when ARR__C >  EXPIRING_ACV__C then EXPIRING_ACV__C else ARR__C end 
+                            end as RENEWAL_ARR_FINANCE          
+,case when type = 'Renewal' and ARR__C <  EXPIRING_ACV__C then ARR__C- EXPIRING_ACV__C end as CONTRACTION_ARR_FINANCE2
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+  );
+  
+  
+// Create a base table in PRE for the Tableau Database to Reference
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC" AS
+  (
+        --FINANCE_NEW_ARR
+    SELECT id, closedate, closedate as FINANCE_CLOSEDATE,stagename, name, TYPE, ARR__C,EXPIRING_REVENUE__C, EXPIRING_ACV__C,CURRENT_ACCTSEGMENT__SNW
+    ,case when type = 'New Business' then ARR__C end as FINANCE_NEW_ARR
+    ,case when type = 'Upsell' then ARR__C end as FINANCE_UPSELL_ARR
+    ,case when type = 'Growth Increase' then ARR__C 
+          when (type = 'Renewal' and ARR__C > EXPIRING_ACV__C) then  ARR__C - EXPIRING_ACV__C end as FINANCE_GROWTH_ARR
+    ,case when type = 'Renewal' then 
+                                    case when ARR__C >  EXPIRING_ACV__C then EXPIRING_ACV__C else ARR__C end 
+                                end as FINANCE_RENEWAL_ARR          
+    ,case when type = 'Renewal' and ARR__C <  EXPIRING_ACV__C then ARR__C- EXPIRING_ACV__C end as FINANCE_CONTRACTION_ARR
+    ,ifnull(FINANCE_NEW_ARR,0) + ifnull(FINANCE_UPSELL_ARR,0) + ifnull(FINANCE_GROWTH_ARR,0) as FINANCE_COMBINED_ARR
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+  );
+
+
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 9999
+where id = '0066e00001cnai3AAA';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 3852
+where id = '0066e00001cnOCgAAM';
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 12000
+where id = '0065A00001bxwLuQAI';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 25000
+where id = '0065A00001bxcINQAY';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 22500
+where id = '0065A00001bwHf1QAE';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 19500
+where id = '0065A00001bx3a5QAA';
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 7500
+where id = '0065A00001YWWCGQA5';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 5000
+where id = '0065A00001YVjftQAD';
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 15000
+where id = '0065A00001YV7DNQA1';
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 20001
+where id = '0065A00001bxhjFQAQ';
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR + 30000 - 2100
+where id = '0065A00001a2YQfQAM';
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 30000
+where id = '0065A00001bw78rQAA';
+// WORKING HERE
+//UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+//set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 10000
+//where id = '0066e00001cnai3AAA';
+//
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 2400
+where id = '0066e00001coZpRAAU';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 1800
+where id = '0066e00001eVa8NAAS';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 7056.00
+where id = '0065A00001ZgMbhQAF';
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 720,
+   Closedate = '2/15/2021'
+where id = '0066e00001cnOCgAAM';
+//June 2021
+-----
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 4740
+where id = '0065A00001cmdkpQAA';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 4800
+where id = '0066e00001eVx8rAAC';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 6720
+where id = '0066e00001coNZyAAM';
+
+// Skydio renewal
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 171
+where id = '0065A00001ZhTyPQAV';
+
+
+//UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+//set FINANCE_COMBINED_ARR = 25714
+//where id = '0065A00001cmdl3QAA';
+
+---- July 2021 Corrections
+// Larry Correction FRONTAPP Previous Expiring ARR was toolow
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 13640.26
+where id = '0065A00001YW92MQAT';
+
+// Larry Correction LUCID WORKS Previous Expiring ARR was too high
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 3840
+where id = '0065A00001bxHysQAE';
+
+--- August 2021 Corrections
+
+//66356
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 66356
+where id = '0065A00001bSqn0QAC';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 600,
+    TYPE = 'New Business'
+where id = '0066e00001fKHYnAAO';
+
+//Zendesk had a $10K one time discount.  but it was a 2 year deal.  
+//In SFDC, it is applying the full $10K one time discount to the first year ARR.  
+//I am applying the $10K one time discount across the full 2 years.  Hence the $5K difference
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR + 5000
+where id = '0065A00001ZhbexQAB';
+
+// Closedate was retro-actively adjusted on this opp. Must change closedates in report
+UPDATE   "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+set CLOSEDATE = '8/31/2021'
+where id = '0065A00001a1g96QAA';
+//
+//UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+//set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 300
+//where id = '0066e00001fLHpjAAG';
+//
+
+// verkada trial should not be included
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 0
+where id = '0066e00001fK2rzAAC';
+
+
+// October Adjustments
+// Rippling should be higher
+
+//Rippling is weird because the deal has a ramp in the second year of a two year deal.  
+//So the first year they pay $111,720 and the second year they pay $167580.  
+//Larry is using the second year (ending) ARR of $167,580 for company ARR purposes.  
+//So, sales credit is only $31,921 because commission is paid on year 1 ARR only.  
+//But, for Company ARR reporting purposes, 
+//Larry is using the second year ARR of $167580 resulting in a higher expansion number of $87,781
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 87780.59
+where id = '0065A00001bxYB7QAM';
+
+//Prod Perfect was an upgrade from Lead to Advanced.  
+//For Christine’s report, she is reporting the “ending” ARR of $4,800.  
+//However, I am only counting the difference between the existing Lead routing deal 
+//and the higher Advance routing upgrade ($900).  
+//SFDC and I will always be different because she is not taking 
+//into the existing deal that is being upgraded in your number.
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = 900
+where id = '0066e00001fMOVuAAO';
+
+// Mandiant they bought $50K in Attribution.  It is in Upsell because it is a spin off from FireEye
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR - 50000
+where id = '0066e00001fLsUMAA0';
+
+
+
+SELECT* FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC" 
+where id = '0065A00001a1g96QAA';
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+where id = '0066e00001cnOCgAAM';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR-10
+where TYPE = 'Renewal'
+and closedate >= '4/1/2021'
+and closedate <= '4/30/2021';
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR-(25000/14)
+where TYPE = 'New Business'
+and closedate >= '5/1/2021'
+and closedate <= '5/31/2021'
+and stagename = 'Closed Won';
+
+
+UPDATE  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+set Closedate = '2/15/2021',
+fiscalquarter =1
+where id = '0066e00001cnOCgAAM';
+
+
+
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+where id = '0066e00001cnOCgAAM';
+
+
+SELECT Closedate,arr__C, fiscalquarter, * FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+where id = '0066e00001cnOCgAAM';
+
+  
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC" AS
+  (
+    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  );
+  
+
+  
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_FINANCE_ARR_CALC" AS
+  (
+    SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  );
+  
+  
+  SELECT * FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_FINANCE_ARR_CALC" ;
+  
+  
+  CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_OPPORTUNITY" AS
+  (
+    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+  );
+  
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+WHERE ID in ( '0065A00001cmdl3QAA', '0065A00001cmdkpQAA', '0066e00001eVx8rAAC', '0066e00001coNZyAAM');
+  
+
+SELECT 
+month(CLOSEDATE),
+type,
+SUM(NEW_ARR__FINANCE),
+SUM(UPSELL_ARR__FINANCE),
+SUM(GROWTH_ARR__FINANCE2)
+FROM "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
+WHERE CLOSEDATE >= '1/1/2021'
+and  CLOSEDATE <= '6/30/2021'
+and stagename = 'Closed Won'
+group by 1,2
+order by 1,2 asc;
+
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
+WHERE CLOSEDATE >= '1/1/2021'
+and stagename = 'Closed Won'
+and type in ('Renewal', 'Upsell', 'New Business');
+
+
+select "Opportunities ID - 15 to 18","Close Date", "Opportunity Name", "Growth",Growth_Amount__c, GROWTH_CALCULATED__C,
+ifnull("Growth", 0) - GROWTH_CALCULATED__C
+FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2 
+on t1."Opportunities ID - 15 to 18" = t2.ID
+WHERE "Close Date" >= '3/1/2021'
+and t1."Type" = 'Renewal';
+
+SELECT
+ID,
+OPP_CREATEDBY_NAME__SNW,
+OPP_BESTRELATIONSHIP_CREATIONNAME__SNW,
+OPP_OWNERNAME__SNW,
+
+* FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE CREATEDBYID <> BEST_RELATIONSHIP_UPON_OPP_CREATION__C
+and TYPE = 'New Business'
+and CREATEDDATE >= '4/1/2021';
+
+
+
+
+SELECT ID, name, type, Closedate FROM  "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
+WHERE CLOSEDATE >= '1/1/2021'
+and stagename = 'Closed Won'
+and type in ('Renewal', 'Upsell', 'New Business');
+
+SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type"  FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+WHERE "Close Date" >= '1/1/2021'
+and "Type" in ('Renewal', 'Upsell', 'New Business');
+
+
+SELECT *
+FROM (
+        SELECT ID, name, type, Closedate FROM  "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
+        WHERE CLOSEDATE >= '1/1/2021'
+        AND CLOSEDATE <= '6/30/2021'
+        and stagename = 'Closed Won'
+        and type in ('Renewal', 'Upsell', 'New Business')) t1
+FULL OUTER JOIN (
+        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type"  
+        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+        WHERE "Close Date" >= '1/1/2021'
+        AND "Close Date" <= '4/30/2021'
+        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
+ON t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE t1.ID is null or t2."Opportunities ID - 15 to 18" is null ;
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC_tmp1" AS
+  (SELECT t1.id
+     , t2.BOARD_SLIDE_ARR_ADJUSTMENT
+     , t2.FINANCE_CLOSEDATE
+     , t1.closedate
+     , t1.closedate as FINANCE_CLOSEDATE2
+     , t1.stagename
+     , t1.name
+     , t1.TYPE
+     , t1.ARR__C
+     , t1.EXPIRING_REVENUE__C
+     , t1.EXPIRING_ACV__C
+    ,case when type = 'New Business' then ARR__C end as FINANCE_NEW_ARR
+    ,case when type = 'Upsell' then ARR__C end as FINANCE_UPSELL_ARR
+    ,case when type = 'Growth Increase' then ARR__C
+          when (type = 'Renewal' and ARR__C > EXPIRING_ACV__C) then  ARR__C - EXPIRING_ACV__C end as FINANCE_GROWTH_ARR
+    ,case when type = 'Renewal' then
+                                    case when ARR__C >  EXPIRING_ACV__C then EXPIRING_ACV__C else ARR__C end
+                                end as FINANCE_RENEWAL_ARR
+    ,case when type = 'Renewal' and ARR__C <  EXPIRING_ACV__C then ARR__C- EXPIRING_ACV__C end as FINANCE_CONTRACTION_ARR
+    ,ifnull(FINANCE_NEW_ARR,0) + ifnull(FINANCE_UPSELL_ARR,0) + ifnull(FINANCE_GROWTH_ARR,0) + ifnull(BOARD_SLIDE_ARR_ADJUSTMENT,0) as FINANCE_COMBINED_ARR
+FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC" t1
+left join "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_GS_FIN_ARR_ADJUSTMENTS" t2
+on t1.ID = t2.SFDC_ID
+    );
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+as (
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC_tmp1"
+  );
+
+
+
+SELECT *
+FROM (
+        SELECT ID, name, type, Closedate, 
+        FINANCE_NEW_ARR,
+        FINANCE_UPSELL_ARR,
+        FINANCE_GROWTH_ARR,FINANCE_COMBINED_ARR
+        FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  
+  --SNW_FINANCE_ARR_CALC
+  --TEST_ARR_CALC_FINANCE
+        WHERE CLOSEDATE >= '1/1/2021'
+        AND CLOSEDATE <= '7/31/2021'
+        and stagename = 'Closed Won'
+        and type in ('Renewal', 'Upsell', 'New Business')) t1
+FULL OUTER JOIN (
+        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type",
+        "New",
+        "Upsell",
+        "Growth"
+        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+        WHERE "Close Date" >= '1/1/2021'
+        AND "Close Date" <= '7/31/2021'
+        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
+ON t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE abs(FINANCE_NEW_ARR - "New") > .1 or abs(FINANCE_UPSELL_ARR- "Upsell") > .1 or abs(FINANCE_GROWTH_ARR - "Growth") > .1 
+or (FINANCE_NEW_ARR is null and "New" is not null) or (FINANCE_NEW_ARR is not null and "New" is null)
+or (FINANCE_UPSELL_ARR is null and "Upsell" is not null) or (FINANCE_UPSELL_ARR is not null and "Upsell" is null)
+or (FINANCE_GROWTH_ARR is null and "Growth" is not null) or (FINANCE_GROWTH_ARR is not null and "Growth" is null)
+or t1.type <> t2."Type"
+
+--- 0065A00001clh6kQAA (zero dollar partner op)
+order by closedate asc
+;
+
+
+SELECT *
+FROM (
+        SELECT ID, name, type, Closedate, 
+        NEW_ARR__FINANCE,
+        UPSELL_ARR__FINANCE,
+        GROWTH_ARR__FINANCE2
+        FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  
+  --SNW_FINANCE_ARR_CALC
+  --TEST_ARR_CALC_FINANCE
+        WHERE CLOSEDATE >= '1/1/2021'
+        AND CLOSEDATE <= '6/30/2021'
+        and stagename = 'Closed Won'
+        and type in ('Renewal', 'Upsell', 'New Business')) t1
+FULL OUTER JOIN (
+        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type",
+        "New",
+        "Upsell",
+        "Growth"
+        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+        WHERE "Close Date" >= '1/1/2021'
+        AND "Close Date" <= '9/30/2021'
+        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
+ON t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE abs(NEW_ARR__FINANCE - "New") > .1 or abs(UPSELL_ARR__FINANCE- "Upsell") > .1 or abs(GROWTH_ARR__FINANCE2 - "Growth") > .1 
+or (NEW_ARR__FINANCE is null and "New" is not null) or (NEW_ARR__FINANCE is not null and "New" is null)
+or (UPSELL_ARR__FINANCE is null and "Upsell" is not null) or (UPSELL_ARR__FINANCE is not null and "Upsell" is null)
+or (GROWTH_ARR__FINANCE2 is null and "Growth" is not null) or (GROWTH_ARR__FINANCE2 is not null and "Growth" is null)
+or t1.type <> t2."Type"
+
+--- 0065A00001clh6kQAA (zero dollar partner op)
+order by closedate asc
+;
+
+
+
+SELECT  abs(ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0)),
+ ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0),
+month(closedate),*
+FROM (
+        SELECT ID, name, type, Closedate, 
+        FINANCE_NEW_ARR,
+        FINANCE_UPSELL_ARR,
+        FINANCE_GROWTH_ARR,
+  FINANCE_COMBINED_ARR,
+  ARR__C,CURRENT_ACCTSEGMENT__SNW
+        FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  
+  --SNW_FINANCE_ARR_CALC
+  --TEST_ARR_CALC_FINANCE
+        WHERE CLOSEDATE >= '1/1/2021'
+        AND CLOSEDATE <= '10/31/2021'
+        and stagename = 'Closed Won'
+        and type in ('Renewal', 'Upsell', 'New Business')) t1
+FULL OUTER JOIN (
+        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type","Account Segment Formula",
+        "New",
+        "Upsell",
+        "Growth",
+        ifnull("New",0)+ifnull("Upsell",0)+ifnull("Growth",0) as VPSheet_Combined_ARR
+        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+        WHERE "Close Date" >= '1/1/2021'
+        AND "Close Date" <= '10/31/2021'
+        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
+ON t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE abs(FINANCE_NEW_ARR - "New") > .1 or abs(FINANCE_UPSELL_ARR- "Upsell") > .1 or abs(FINANCE_GROWTH_ARR - "Growth") > .1 
+or (FINANCE_NEW_ARR is null and "New" is not null) or (FINANCE_NEW_ARR is not null and "New" is null)
+or (FINANCE_UPSELL_ARR is null and "Upsell" is not null) or (FINANCE_UPSELL_ARR is not null and "Upsell" is null)
+or (FINANCE_GROWTH_ARR is null and "Growth" is not null) or (FINANCE_GROWTH_ARR is not null and "Growth" is null)
+or t1.type <> t2."Type"
+or upper(name) like '%ATTRI%'
+--or FINANCE_COMBINED_ARR <>  t2."ARR"
+or abs(FINANCE_COMBINED_ARR - VPSheet_Combined_ARR) > 10
+--or t1.ARR__C <> t2."ARR"
+or ID is null
+
+
+--- 0065A00001clh6kQAA (zero dollar partner op)
+order by closedate asc
+;
+
+
+
+SELECT SALES_CREDIT_ARR__C as sc, name as nm, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+where upper(name) like '%SKYDIO%'
+and stagename = 'Closed Won'
+
