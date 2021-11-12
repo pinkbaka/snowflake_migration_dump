@@ -1,0 +1,97 @@
+use role securityadmin;
+
+create role taskadmin;
+
+-- set the active role to ACCOUNTADMIN before granting the EXECUTE TASK privilege to the new role
+use role accountadmin;
+
+grant execute task on account to role sysadmin;
+
+-- set the active role to SECURITYADMIN to show that this role can grant a role to another role
+use role securityadmin;
+
+grant role taskadmin to role myrole;
+
+//CREATE [ OR REPLACE ] TASK [ IF NOT EXISTS ] <name>
+//  WAREHOUSE = <string>
+//  [ SCHEDULE = '{ <num> MINUTE | USING CRON <expr> <time_zone> }' ]
+//  [ <session_parameter> = <value> [ , <session_parameter> = <value> ... ] ]
+//  [ USER_TASK_TIMEOUT_MS = <num> ]
+//  [ COPY GRANTS ]
+//  [ COMMENT = '<string_literal>' ]
+//  [ AFTER <string> ]
+//[ WHEN <boolean_expr> ]
+//AS
+//  <sql>
+USE "MTL_LOAD_PRE";
+
+create or replace sequence id_seq;
+//
+//create or replace table foo (k number default seq1.nextval, v number);
+//
+create OR REPLACE table "TEST" (
+  id integer default id_seq.nextval, -- auto incrementing IDs   
+  created_at timestamp
+);
+
+
+INSERT INTO "TEST" (ID, created_at)
+VALUES(DEFAULT, CURRENT_TIMESTAMP);
+
+
+SELECT * FROM "TEST";
+
+//CREATE OR REPLACE TASK MTL_LOAD2PRE
+//    WAREHOUSE = "REV_OPS_ETL_WH"
+//    //SCHEDULE = '1 minute'
+//    //SCHEDULE = 'USING CRON 0 9-17 * * SUN America/Los_Angeles'
+//    SCHEDULE = 'USING CRON * * * * * UTC'
+//--WHEN
+//AS
+//    INSERT INTO "TEST" (ID, created_at)
+//    VALUES(DEFAULT, CURRENT_TIMESTAMP);
+USE "PC_MATILLIONLOADER_DB";
+CREATE OR REPLACE TASK MTL_LOAD2PRE
+    WAREHOUSE = "REV_OPS_ETL_WH"
+    //SCHEDULE = '1 minute'
+    //SCHEDULE = 'USING CRON 0 9-17 * * SUN America/Los_Angeles'
+    //SCHEDULE = 'USING CRON * * * * * UTC'
+    SCHEDULE = '360 minute'
+--WHEN
+AS
+   CALL USP_ETL_MTLLOADPRE_CALLALLUSP();
+"MTL_LOAD_PRE"."INFORMATION_SCHEMA"
+
+
+ALTER TASK  IF EXISTS  MTL_LOAD2PRE RESUME;
+
+select *
+  from table(information_schema.task_history())
+  order by scheduled_time;
+
+ALTER TASK MTL_LOAD2PRE RESUME;
+
+ALTER TASK MTL_LOAD2PRE SUSPEND;
+
+
+create or replace stream TEST_CHANGES on table TEST;
+
+show streams;
+
+
+select * from TEST_CHANGES;
+
+select top 100 * from TARGET_OPPORTUNITY_CHANGES;
+
+
+USE "PC_MATILLIONLOADER_DB";
+CREATE OR REPLACE TASK LD_PD_SNAPSHOT_CUSTOMER_USAGE_METRICS
+    WAREHOUSE = "REPORTING_WH_PRODUCT"
+    SCHEDULE = '0 1 * * * America/Los_Angeles'
+
+--WHEN
+AS
+   CALL USP_ETL_MTLLOADPRE_CALLALLUSP();
+
+
+show tasks;
