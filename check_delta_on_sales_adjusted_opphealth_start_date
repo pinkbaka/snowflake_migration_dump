@@ -1,0 +1,67 @@
+                          SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+                                   AS MIN_SALES_CYCLE_STARTDATE,
+                          * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                          WHERE 
+                          OPPSTAGE = 'Stage 0: First Call'
+                          and name like '%Cognism%'
+                          ORDER BY ID, OPPSTAGE;
+                          
+                          
+                          
+                                                 SELECT  ID, NAME, OPPSTAGE, TYPE, ISCLOSED ,
+                            CURRENT_ACCTSEGMENT__SNW, stagename
+                        , MIN(CREATEDDATE) as MIN_CREATEDATE,FIRST_CALL_DATE__C
+                        --, case when ID in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES") THEN TRUE ELSE FALSE END as HAS_OLD_OPPSTAGE
+                        FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+                        WHERE OPPSTAGE not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                                              'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                                              'Trial - Completed', 'Trial - Active', 'Demo',
+                                                  'Stage 2: In Active Scope',
+                                                  'Stage 5: SOW Execution')
+                                                  and name  like '%Cognism%'
+                        group by ID, NAME, OPPSTAGE,  TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename, FIRST_CALL_DATE__C--, HAS_OLD_OPPSTAGE
+                        order by  ID, NAME,  MIN(CREATEDDATE) ;
+                        
+                        
+                        
+                                 SELECT 
+                                date(current_date()) - date(t1.CREATEDDATE) as DAYS_OPEN
+                                ,date(current_date()) - date(t3.BEST_SALES_START_DATE) as DAYS_OPEN_SalesAdjusted
+                                ,DAYS_OPEN -DAYS_OPEN_SalesAdjusted as delta,
+                                t1.ID
+                                ,t1.NAME
+                                ,t1.TYPE
+                                ,t1.CURRENT_ACCTSEGMENT__SNW
+                                ,t1.CREATEDDATE
+                                ,t1.stagename
+                                ,t1.MATILLION_UPDATED_TIMESTAMP as SFDC_Refresh_Time
+                                ,t3.BEST_SALES_START_DATE
+                                ,t3.BEST_SALES_START_STAGE
+                                ,t3.HAS_OLD_OPPSTAGE
+                                ,t2.MEDIAN_DAYS_IN_STAGE
+                                ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+                                ,t2.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+                                , t1.SALES_CREDIT_ARR__C
+                                , t1.DAYS_TO_CLOSE__C
+                                ,t1.EBSTA1__EBSTA_SCORE__C
+
+                                ,date(t1.closedate) - date(current_date()) as DAYS_TO_CLOSE
+                                ,t4.DAYS_IN_STAGE__SNW
+                                  ,t4.FIRSTDAYINSTAGE
+
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+                            left join  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT" t2
+                            ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+                            AND t1.STAGENAME = t2.OPPSTAGE
+                              and t1.type = t2.type
+                            left join "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP2" t3
+                            on t1.ID = t3.ID
+                            LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS" t4
+                            ON t1.ID = t4.ID
+                            WHERE t1.STAGENAME in ('Stage 0: First Call',
+                                                   'Stage 1: Initial Engagement',
+                                                   'Stage 2: Discovery',
+                                                   'Stage 3: Business & Solution Alignment',
+                                                   'Stage 4: Validation',
+                                                   'Stage 5: Negotiation')
+                                                   order by abs( delta) desc
