@@ -1,0 +1,1603 @@
+//      TABLE OF CONTENTS
+//      (TOC-1 ) - CREATE BASE OPP_STAGE_LIFECYCLE
+//      (TOC-2 ) - CHECK OPPORTUNITY STAGE NAMES
+//      (TOC-3 ) - FIND OPPS WITH UNWANTED STAGENAMES
+//      (TOC-4 ) - EXCLUDE OPPS WITH UNWANTED STAGE FROM BASE
+//      (TOC-5 ) - OFFSET MINIMUM CREATE DATE BY STAGE
+//      (TOC-6 ) - CALCULATE DATE DELTA FOR DAYS IN STAGE
+
+//      (TOC-7 ) - PIVOT ON MEDIAN DAYS IN STAGE BY SEGMENT
+//          (TOC-7A) - SUM PIVOT TO FIND MED DAYS OPEN AND CLOSE
+//          (TOC-7B) - SETUP MEDIAN DAYS OPEN TO BE UNPIVOTED
+//          (TOC-7C) - UNPIVOT MEDIAN DAYS OPEN
+//          (TOC-7D) - SETUP MEDIAN DAYSTO CLOSE TO BE UNPIVOTED 
+//          (TOC-7E) - UNPIVOT  MEDIAN DAYS TO CLOSE
+
+//      (TOC-8 ) - UNPIVOT MEDIAN DAYS IN STAGE BY SEGMENT
+//          (TOC-8A) - SUMMARIZE MEDIAN DAYS CALCULATIONS 
+//.     (TOC-9 ) - FIND # OF DAYS AN OPP HAS BEEN IN STAGE 
+//"LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY"
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-1) - CREATE BASE OPP_STAGE_LIFECYCLE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+// Join the opportunity and opportunity History table from 2020 going forward
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+AS
+(
+    SELECT t1.ID, t1.name, t2.STAGENAME as oppstage,
+    t2.CREATEDDATE, t1.CLOSEDATE, t1.type, t1.isclosed,
+  CURRENT_ACCTSEGMENT__SNW,  t1.STAGENAME ,FIRST_CALL_DATE__C,FIRST_CALL_RESULT__C--, 
+  --    * 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+    on t1.id = t2.OPPORTUNITYID
+    WHERE t1.CLOSEDATE >= '1/1/2020'
+    order by t1.ID, t2.CREATEDDATE
+);
+
+
+//SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+//         AS MIN_SALES_CYCLE_STARTDATE,FIRST_CALL_DATE__C,
+//
+//
+//* FROM "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+//WHERE OPPSTAGE <> 'Stage 0: First Call'
+//and stagename = 'Closed Won'
+//and TYPE = 'Upsell'
+//ORDER BY ID, OPPSTAGE;
+//
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-2) - CHECK OPPORTUNITY STAGE NAMES @@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+SELECT  t2.STAGENAME
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+on t1.id = t2.OPPORTUNITYID
+WHERE t1.CLOSEDATE >= '1/1/2020'
+group by  1;
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-3) - FIND OPPS WITH UNWANTED STAGENAMES @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// return ID's of opps with unwanted stage convention
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES"
+as
+(
+    SELECT t1.ID --t2.STAGENAME
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+    on t1.id = t2.OPPORTUNITYID
+    WHERE t2.STAGENAME IN  ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+    group by t1.ID
+    order by t1.ID
+);
+
+//SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES";
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-4) - EXCLUDE OPPS WITH UNWANTED STAGE FROM BASE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+//as
+//(
+//  SELECT  ID, NAME, OPPSTAGE, TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename
+//  , MIN(CREATEDDATE) as MIN_CREATEDATE,FIRST_CALL_DATE__C
+//  FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+//  WHERE ID not in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES")
+//  group by ID, NAME, OPPSTAGE,  TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename, FIRST_CALL_DATE__C
+//  order by  ID, NAME,  MIN(CREATEDDATE) 
+//);
+//
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+as
+(
+  SELECT  ID, NAME, OPPSTAGE, TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename
+  , MIN(CREATEDDATE) as MIN_CREATEDATE,FIRST_CALL_DATE__C
+  --, case when ID in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES") THEN TRUE ELSE FALSE END as HAS_OLD_OPPSTAGE
+  FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+  WHERE OPPSTAGE not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+  group by ID, NAME, OPPSTAGE,  TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename, FIRST_CALL_DATE__C--, HAS_OLD_OPPSTAGE
+  order by  ID, NAME,  MIN(CREATEDDATE) 
+);
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)";
+
+
+
+
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S0DATE"
+as
+( 
+  SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+           AS MIN_SALES_CYCLE_STARTDATE,
+  * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+  WHERE 
+  OPPSTAGE = 'Stage 0: First Call'
+  ORDER BY ID, OPPSTAGE
+);
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S1DATE"
+as
+( 
+  SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+           AS MIN_SALES_CYCLE_STARTDATE,
+  * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+  WHERE 
+  OPPSTAGE = 'Stage 1: Initial Engagement'
+  ORDER BY ID, OPPSTAGE
+);
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_SXDATE"
+as
+( 
+  SELECT * FROM 
+  (
+  SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+           AS MIN_SALES_CYCLE_STARTDATE,
+         RANK() over  (PARTITION BY ID ORDER BY MIN_CREATEDATE asc) as MIN_DATE_RANK,
+  * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+  WHERE 
+  OPPSTAGE not in ('Stage 0: First Call','Stage 1: Initial Engagement','Closed Won','Closed Lost', 'Disqualified')
+  ORDER BY ID, OPPSTAGE
+  )
+  WHERE MIN_DATE_RANK = 1
+);
+
+
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-5) - OFFSET MINIMUM CREATE DATE BY STAGE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+as
+(
+    SELECT *,
+    lag(MIN_CREATEDATE) over (partition by ID order by NAME, MIN_CREATEDATE desc) as date_offset
+    FROM  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+    order by   ID, NAME, MIN_CREATEDATE desc
+);
+  
+  
+//  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET" where stagename = 'Closed Won'
+//  and id = '0065A00001YUjq6QAD'
+//  order by id, min_createdate
+//  ;
+//  and name like '%Totango%';
+// test query for example  
+//  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+//  where ID = '0065A00001cmpDlQAI' ;
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-6) - CALCULATE DATE DELTA FOR DAYS IN STAGE @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+ CREATE OR REPLACE VIEW "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+ as 
+ (
+    SELECT *,
+    date(DATE_OFFSET) as Offset_date,  date(MIN_CREATEDATE) as min_createddate ,
+    date(DATE_OFFSET) - date(MIN_CREATEDATE) as days_in_stage
+    FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+ );
+  
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7) - PIVOT ON MEDIAN DAYS IN STAGE BY SEGMENT @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//////// THIS ONE IS GOOD
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+as
+(
+SELECT * 
+  FROM
+  (SELECT TYPE, CURRENT_ACCTSEGMENT__SNW,OPPSTAGE,DAYS_IN_STAGE--, * 
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+  WHERE TYPE in ('New Business', 'Renewal', 'Upsell') AND
+    STAGENAME = 'Closed Won'
+    and OPPSTAGE in ('Stage 0: First Call',
+                     'Stage 1: Initial Engagement',
+                     'Stage 2: Discovery',
+                     'Stage 3: Business & Solution Alignment',
+                     'Stage 4: Validation',
+                     'Stage 5: Negotiation'))
+        PIVOT(Median(DAYS_IN_STAGE) for OPPSTAGE in ('Stage 0: First Call',
+                                                     'Stage 1: Initial Engagement',
+                                                     'Stage 2: Discovery',
+                                                     'Stage 3: Business & Solution Alignment',
+                                                     'Stage 4: Validation',
+                                                     'Stage 5: Negotiation')) as p
+ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+// test data
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE";
+where id ='0066e00001fN1HWAA0';
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7A) - SUM PIVOT TO FIND MED DAYS OPEN AND CLOSE @@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+as
+(
+SELECT 
+*
+,cast("'Stage 0: First Call'" as DOUBLE) as S0
+,cast("'Stage 1: Initial Engagement'" as DOUBLE)  as S1
+,cast("'Stage 2: Discovery'" as DOUBLE)  as S2
+,cast("'Stage 3: Business & Solution Alignment'" as DOUBLE)  as S3
+,cast("'Stage 4: Validation'" as DOUBLE)  as S4
+,cast("'Stage 5: Negotiation'" as DOUBLE)  as S5
+,S0 as S0_MEDIAN_DAYS_OPEN
+//,S1 as S1_MEDIAN_DAYS_OPEN
+//,S1+S2 as S2_MEDIAN_DAYS_OPEN
+//,S1+S2+S3 as S3_MEDIAN_DAYS_OPEN
+//,S1+S2+S3+S4 as S4_MEDIAN_DAYS_OPEN
+//,S1+S2+S3+S4+S5 as S5_MEDIAN_DAYS_OPEN
+,S0+S1 as S1_MEDIAN_DAYS_OPEN
+,S0+S1+S2 as S2_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3 as S3_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4 as S4_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4+S5 as S5_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4+S5 as S0_MEDIAN_DAYS_TO_CLOSE
+,S1+S2+S3+S4+S5 as S1_MEDIAN_DAYS_TO_CLOSE
+,S2+S3+S4+S5 as S2_MEDIAN_DAYS_TO_CLOSE
+,S3+S4+S5 as S3_MEDIAN_DAYS_TO_CLOSE
+,S4+S5 as S4_MEDIAN_DAYS_TO_CLOSE
+,S5 as S5_MEDIAN_DAYS_TO_CLOSE
+FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+  ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7B) - SETUP MEDIAN DAYS OPEN TO BE UNPIVOTED @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+as
+(
+SELECT 
+  TYPE, CURRENT_ACCTSEGMENT__SNW
+,S0_MEDIAN_DAYS_OPEN AS "Stage 0: First Call"
+,S1_MEDIAN_DAYS_OPEN AS "Stage 1: Initial Engagement"
+,S2_MEDIAN_DAYS_OPEN AS "Stage 2: Discovery"
+,S3_MEDIAN_DAYS_OPEN AS "Stage 3: Business & Solution Alignment"
+,S4_MEDIAN_DAYS_OPEN AS "Stage 4: Validation"
+,S5_MEDIAN_DAYS_OPEN AS "Stage 5: Negotiation"
+
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+    ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN";
+ 
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7C) - UNPIVOT MEDIAN DAYS OPEN @@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT"
+as
+(
+select TYPE, CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_OPEN_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+    unpivot(MEDIAN_DAYS_OPEN_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                            "Stage 1: Initial Engagement",
+                            "Stage 2: Discovery",
+                            "Stage 3: Business & Solution Alignment",
+                            "Stage 4: Validation",
+                            "Stage 5: Negotiation"))
+ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+                            
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7D) - SETUP MEDIAN DAYS TO CLOSE TO BE UNPIVOTED @@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                            
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+as
+(
+SELECT 
+  TYPE,
+  CURRENT_ACCTSEGMENT__SNW
+,S0_MEDIAN_DAYS_TO_CLOSE AS "Stage 0: First Call"
+,S1_MEDIAN_DAYS_TO_CLOSE AS "Stage 1: Initial Engagement"
+,S2_MEDIAN_DAYS_TO_CLOSE AS "Stage 2: Discovery"
+,S3_MEDIAN_DAYS_TO_CLOSE AS "Stage 3: Business & Solution Alignment"
+,S4_MEDIAN_DAYS_TO_CLOSE AS "Stage 4: Validation"
+,S5_MEDIAN_DAYS_TO_CLOSE AS "Stage 5: Negotiation"
+
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE";
+ 
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7E) - UNPIVOT  MEDIAN DAYS TO CLOSE @@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT"
+as
+(
+select TYPE, CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_TOCLOSE_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+    unpivot(MEDIAN_DAYS_TOCLOSE_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                            "Stage 1: Initial Engagement",
+                            "Stage 2: Discovery",
+                            "Stage 3: Business & Solution Alignment",
+                            "Stage 4: Validation",
+                            "Stage 5: Negotiation"))
+ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+      
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8) - UNPIVOT MEDIAN DAYS IN STAGE BY SEGMENT @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT"
+as
+(
+select TYPE, CURRENT_ACCTSEGMENT__SNW, REPLACE(OPPSTAGE,'''') as OPPSTAGE, MEDIAN_DAYS_IN_STAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+    unpivot(MEDIAN_DAYS_IN_STAGE for OPPSTAGE in ("'Stage 0: First Call'",
+                            "'Stage 1: Initial Engagement'",
+                            "'Stage 2: Discovery'",
+                            "'Stage 3: Business & Solution Alignment'",
+                            "'Stage 4: Validation'",
+                            "'Stage 5: Negotiation'"))
+ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+);
+
+//OPPORTUNITY_LIFECYCLE_PIVOT
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT";
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8A) - SUMMARIZE MEDIAN DAYS CALCULATIONS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT"
+as
+(
+    SELECT 
+        t1.TYPE
+        ,t1.CURRENT_ACCTSEGMENT__SNW
+        ,t1.OPPSTAGE
+        ,t1.MEDIAN_DAYS_IN_STAGE
+        ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+        ,t3.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+    FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT" t1 
+    LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT" t2
+        ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+        and t1.OPPSTAGE = t2.OPPSTAGE
+        and t1.type = t2.type
+    LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT" t3
+        ON t1.CURRENT_ACCTSEGMENT__SNW = t3.CURRENT_ACCTSEGMENT__SNW
+        and t1.OPPSTAGE = t3.OPPSTAGE
+        and t1.type = t3.type
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT"
+;
+            
+ 
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-9) - FIND # OF DAYS AN OPP HAS BEEN IN STAGE @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS"
+as
+(
+SELECT t1.ID, t1.NAME, TYPE,t1.STAGENAME,
+  MIN(t2.CREATEDDATE) as FIRSTDAYINSTAGE,
+  DATE(CURRENT_DATE()) - DATE(MIN(t2.CREATEDDATE)) as DAYS_IN_STAGE__SNW
+  
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+ON t1.ID = t2.OPPORTUNITYID
+    AND t1.STAGENAME = t2.STAGENAME
+WHERE ISCLOSED = FALSE
+group by 1,2,3,4
+order by 1,2,3,4
+);
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP1"
+as
+(
+  SELECT 
+  t2.OPPSTAGE as S0_STAGE,
+  t2.MIN_SALES_CYCLE_STARTDATE as  S0_MIN_DATE,
+  t3.OPPSTAGE as S1_STAGE,
+  t3.MIN_SALES_CYCLE_STARTDATE S1_MIN_DATE,
+  t4.OPPSTAGE as SX_STAGE,
+  t4.MIN_SALES_CYCLE_STARTDATE SX_MIN_DATE,
+  
+  t1.*
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S0DATE" t2
+    on t1.ID = t2.ID
+    LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S1DATE" t3
+    on t1.ID = t3.ID
+    LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_SXDATE" t4
+    on t1.ID = t4.ID
+  order by stagename, closedate
+);
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP2"
+as
+(
+SELECT --closedate,
+
+  CASE WHEN FIRST_CALL_DATE__C is not NULL and FIRST_CALL_RESULT__C like '%Complete%' then FIRST_CALL_DATE__C  
+      WHEN S1_MIN_DATE is not NULL then S1_MIN_DATE 
+       WHEN S0_MIN_DATE is not NULL then S0_MIN_DATE
+        WHEN SX_MIN_DATE is not NULL then SX_MIN_DATE
+  else NULL end as BEST_SALES_START_DATE,
+  CASE WHEN FIRST_CALL_DATE__C is not NULL and FIRST_CALL_RESULT__C like '%Complete%' then 'FIRST_CALL'
+      WHEN S1_MIN_DATE is not NULL then S1_STAGE 
+       WHEN S0_MIN_DATE is not NULL then S0_STAGE
+        WHEN SX_MIN_DATE is not NULL then SX_STAGE
+  else NULL end as BEST_SALES_START_STAGE,
+   case when ID in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES") THEN TRUE ELSE FALSE END as HAS_OLD_OPPSTAGE
+  ,
+  --type, NAME,createddate,FIRST_CALL_DATE__C,
+
+  * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP1"
+  where closedate >= '1/1/2020'
+  and stagename not in ('Closed Lost','Disqualified')
+  and type in ('New Business', 'Renewal', 'Upsell')
+  order by 2 desc,1 desc
+);
+
+
+//this one
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE"
+AS (
+    SELECT 
+    t1.ID
+    ,t1.NAME
+    ,t1.TYPE
+    ,t1.CURRENT_ACCTSEGMENT__SNW
+    ,t1.CREATEDDATE
+    ,t1.stagename
+    ,t3.BEST_SALES_START_DATE
+    ,t3.BEST_SALES_START_STAGE
+    ,t3.HAS_OLD_OPPSTAGE
+    ,t2.MEDIAN_DAYS_IN_STAGE
+    ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+    ,t2.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+    , t1.SALES_CREDIT_ARR__C
+    , t1.DAYS_TO_CLOSE__C
+    ,t1.EBSTA1__EBSTA_SCORE__C
+    ,date(current_date()) - date(t1.CREATEDDATE) as DAYS_OPEN
+      ,date(current_date()) - date(t3.BEST_SALES_START_DATE) as DAYS_OPEN_SalesAdjusted
+    ,date(t1.closedate) - date(current_date()) as DAYS_TO_CLOSE
+    ,t4.DAYS_IN_STAGE__SNW
+      ,t4.FIRSTDAYINSTAGE
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT" t2
+ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+AND t1.STAGENAME = t2.OPPSTAGE
+  and t1.type = t2.type
+left join "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP2" t3
+on t1.ID = t3.ID
+LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS" t4
+ON t1.ID = t4.ID
+WHERE t1.STAGENAME in ('Stage 0: First Call',
+                       'Stage 1: Initial Engagement',
+                       'Stage 2: Discovery',
+                       'Stage 3: Business & Solution Alignment',
+                       'Stage 4: Validation',
+                       'Stage 5: Negotiation')
+);
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE";
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS"
+as
+(
+
+  
+// AS INTEGER  
+SELECT
+    t1.*
+    // MEDIAN DAYS IN STAGE TEST
+    ,CASE 
+        WHEN t1.DAYS_IN_STAGE__SNW >= (t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE  ) 
+        THEN 0 
+        ELSE 1 end as OVER_MEDIAN_DAYS_IN_STAGE
+   
+    ,t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE as THRESHOLD_MEDIAN_DAYS
+    ,t1.DAYS_IN_STAGE__SNW as OPP_STAGE_DAYS_IN_STAGE
+    ,t2.MEDIAN_MULTIPLE
+  
+    // EBSTA SCORE TEST
+    ,CASE WHEN t1.EBSTA1__EBSTA_SCORE__C < t2.EBSTA_SCORE_THRESHOLD 
+          THEN 0 
+          ELSE 1 end as BELOW_EBSTASCORE
+    ,t2.EBSTA_SCORE_THRESHOLD as THRESHOLD_EBSTA_SCORE
+    ,t1.EBSTA1__EBSTA_SCORE__C as OPP_EBSTA_SCORE
+
+    // PREMATURE CLOSE DATE TEST
+    ,CASE
+        WHEN  MEDIAN_DAYS_TOCLOSE_BYSTAGE > DAYS_TO_CLOSE *1.5 
+        THEN 0 
+        ELSE 1 end as PREMATURE_CLOSEDATE_THRESHOLD
+    ,MEDIAN_DAYS_TOCLOSE_BYSTAGE as THRESHOLD_DAYS_TOCLOSE
+    ,DAYS_TO_CLOSE as OPP_DAYS_TO_CLOSE
+    ,DAYS_TO_CLOSE *1.5 as TEST_PREMATURE_CLOSEDATE_THRESHOLD
+
+    // OUTDATED OPP TEST
+     ,CASE 
+        WHEN t1.DAYS_OPEN >= (2.5 * t1.MEDIAN_DAYS_OPEN_BYSTAGE  ) 
+        THEN 0 
+        ELSE 1 end as OUTDATED_OPP_THRESHOLD
+    ,MEDIAN_DAYS_OPEN_BYSTAGE * 2.5 as TEST_OUTDATED_OPP_THRESHOLD
+    ,DAYS_OPEN as OPP_DAYS_OPEN
+    ,2.5 as DAYS_OPEN_MULTIPLE 
+  
+   // OVEREXTENDED OPP TEST
+     ,CASE 
+        WHEN t1.DAYS_TO_CLOSE >= (2.5 * t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE  ) 
+        THEN 0 
+        ELSE 1 end as OVEREXTENDED_OPP_THRESHOLD
+     ,t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE*2.5  as TEST_OVEREXTENDED_OPP_THRESHOLD  
+     ,t1.DAYS_TO_CLOSE  as OPP_DAYS_TO_CLOSE2
+     ,2.5 as DAY_TOCLOSE_MULTIPLE
+ 
+     , (OVER_MEDIAN_DAYS_IN_STAGE + BELOW_EBSTASCORE + PREMATURE_CLOSEDATE_THRESHOLD + OUTDATED_OPP_THRESHOLD + OVEREXTENDED_OPP_THRESHOLD) AS OPP_HEALTH_SCORE
+
+    
+    
+   // FOR BOOLEAN TESTING
+    ,CASE
+        WHEN OPP_HEALTH_SCORE >= 4  THEN 'GREEN'
+        WHEN OPP_HEALTH_SCORE = 3  THEN 'YELLOW'
+        WHEN OPP_HEALTH_SCORE <= 2  THEN 'RED' END AS OPP_HEALTH
+  
+     ,CASE 
+        WHEN t1.DAYS_IN_STAGE__SNW >= (t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE  ) 
+        THEN TRUE 
+        ELSE FALSE end as  BOOL_OVER_MEDIAN_DAYS_IN_STAGE
+  
+    ,CASE WHEN t1.EBSTA1__EBSTA_SCORE__C < t2.EBSTA_SCORE_THRESHOLD 
+          THEN TRUE 
+          ELSE FALSE end as BOOL_BELOW_EBSTASCORE
+
+    ,CASE
+        WHEN  MEDIAN_DAYS_TOCLOSE_BYSTAGE > DAYS_TO_CLOSE *1.5  
+        THEN TRUE 
+        ELSE FALSE end as BOOL_PREMATURE_CLOSEDATE_THRESHOLD
+
+     ,CASE 
+        WHEN t1.DAYS_OPEN >= (2.5 * t1.MEDIAN_DAYS_OPEN_BYSTAGE  ) 
+        THEN TRUE 
+        ELSE FALSE end as BOOL_OUTDATED_OPP_THRESHOLD
+
+     ,CASE 
+        WHEN t1.DAYS_TO_CLOSE >= (2.5 * t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE  ) 
+        THEN TRUE 
+        ELSE FALSE end as BOOL_OVEREXTENDED_OPP_THRESHOLD
+
+
+
+FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_ALERT_INPUT_SHEET" t2
+ON  t1.CURRENT_ACCTSEGMENT__SNW = t2.Segment
+    and t1.type = t2.type
+--where t1.type = 'New Business'
+);
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS"
+order by OPP_HEALTH_SCORE desc;
+
+
+
+ ////// @@@@@@@@@@@@@THIS IS WHERE THE OPP HEALTH ALERT STATUS REASON TABLE IS 
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON" AS
+(SELECT *,
+ case when BOOL_BELOW_EBSTASCORE = TRUE
+         then CONCAT('The ebsta score threshold is 80. This Opp has an ebsta score of ', OPP_EBSTA_SCORE, '.') 
+                   //  ' WHICH IS ', CAST(THRESHOLD_EBSTA_SCORE - OPP_EBSTA_SCORE AS VARCHAR(10)), ' BELOW THE THRESHOLD.') 
+         ELSE ' ' END as HEALTH_REASON_EBSTA,
+    case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE = TRUE
+         then CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity advances stages by ', CAST(MEDIAN_DAYS_IN_STAGE AS NUMBER(9,1)), ' days. This Opp has been in ', LEFT(STAGENAME, 7), ' for ',  CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)), ' days.')
+                   // ' WHICH IS ', CAST(DAYS_IN_STAGE__SNW - MEDIAN_DAYS_IN_STAGE as VARCHAR(10)), ' DAYS ABOVE THE THRESHOLD.') 
+         ELSE ' ' END as HEALTH_REASON_MEDIANDAYSINSTAGE,
+    case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD = TRUE
+         then CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity needs ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days to close. This Opp is set to close in ', DAYS_TO_CLOSE, ' days, which is ', MEDIAN_DAYS_TOCLOSE_BYSTAGE - DAYS_TO_CLOSE ,' days earlier than expected.')
+                  //, which is ', CAST(MEDIAN_DAYS_TOCLOSE_BYSTAGE - DAYS_TO_CLOSE AS VARCHAR(10)), ' days more than the expected time to close.')
+         ELSE ' ' END as HEALTH_REASON_PREMATURE,
+    case when BOOL_OUTDATED_OPP_THRESHOLD = TRUE
+         then CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity has been open for no longer than ', MEDIAN_DAYS_OPEN_BYSTAGE, ' days. This Opp has been open for ', DAYS_OPEN, ' days.'
+                    ,'Based on ', BEST_SALES_START_DATE,BEST_SALES_START_STAGE
+                    )
+                  // , which is ', CAST(DAYS_OPEN - MEDIAN_DAYS_OPEN_BYSTAGE AS VARCHAR(10)), ' days open too long.')
+         ELSE ' ' END AS HEALTH_REASON_OUTDATED,
+    case when BOOL_OVEREXTENDED_OPP_THRESHOLD = TRUE
+         then CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity closes in ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days. This Opp is set to close in ',  DAYS_TO_CLOSE, ' days.')
+                  // , which is ', CAST(DAYS_TO_CLOSE - MEDIAN_DAYS_TOCLOSE_BYSTAGE AS VARCHAR(10)),' days overextended.')
+         ELSE ' ' END AS HEALTH_REASON_OVEREXTENDED
+ FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS");
+ 
+ 
+ 
+  CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON" AS
+(SELECT *,
+ CONCAT('The ebsta score threshold is 80. This Opp has an ebsta score of ', OPP_EBSTA_SCORE, '.') as HEALTH_REASON_EBSTA,
+ CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity advances stages by ', CAST(MEDIAN_DAYS_IN_STAGE AS NUMBER(9,1)), ' days. This Opp has been in ', LEFT(STAGENAME, 7), ' for ',  CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)), ' days.')
+        as HEALTH_REASON_MEDIANDAYSINSTAGE,
+ CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity needs ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days to close. This Opp is set to close in ', DAYS_TO_CLOSE, ' days, which is ', MEDIAN_DAYS_TOCLOSE_BYSTAGE - DAYS_TO_CLOSE ,' days earlier than expected.')
+        as HEALTH_REASON_PREMATURE,
+ CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity has been open for no longer than ', MEDIAN_DAYS_OPEN_BYSTAGE, ' days. This Opp has been open for ', DAYS_OPEN, ' days.'
+                    ,'Based on a createdate of ', date(Createddate)  --BEST_SALES_START_DATE,BEST_SALES_START_STAGE
+                    )
+          AS HEALTH_REASON_OUTDATED,
+ CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity closes in ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days. This Opp is set to close in ',  DAYS_TO_CLOSE, ' days.')
+     AS HEALTH_REASON_OVEREXTENDED
+ FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS");
+ 
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL" AS
+(
+SELECT *, 
+         
+            
+           'When compared to Closed Won '|| TYPE || ' '||  CURRENT_ACCTSEGMENT__SNW || ' Deals in ' || STAGENAME ||
+           ', this Opp is in ' || OPP_HEALTH || ' with a score of ' || OPP_HEALTH_SCORE || '/5.' as TOP_COMMENT,  
+  
+           case when not BOOL_BELOW_EBSTASCORE                THEN  CONCAT('(+1) Above Ebsta Score: ', HEALTH_REASON_EBSTA)                    else ''     END  as HEALTH_REASON_EBSTA2,
+           case when not BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT('(+1) Not Over Median Days: ', HEALTH_REASON_MEDIANDAYSINSTAGE)   else ''     END  as HEALTH_REASON_MEDIANDAYSINSTAGE2,
+           case when not BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  CONCAT('(+1) Not Premature Closedate: ', HEALTH_REASON_PREMATURE)        else ''     END as HEALTH_REASON_PREMATURE2,
+           case when not BOOL_OUTDATED_OPP_THRESHOLD          THEN  CONCAT('(+1) Not Outdated (STALE): ', HEALTH_REASON_OUTDATED)            else ''     END as HEALTH_REASON_OUTDATED2,
+           case when not BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  CONCAT('(+1) Not Overextended (SAND BAG): ', HEALTH_REASON_OVEREXTENDED) else ''     END  as HEALTH_REASON_OVEREXTENDED2,
+  
+            
+           case when BOOL_BELOW_EBSTASCORE                THEN  CONCAT('(-1) Ebsta Score: ', HEALTH_REASON_EBSTA)                    else ''  END  as HEALTH_REASON_EBSTA1,
+           case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT('(-1) Over Median Days: ', HEALTH_REASON_MEDIANDAYSINSTAGE)   else ''  END  as HEALTH_REASON_MEDIANDAYSINSTAGE1,
+           case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  CONCAT('(-1) Premature Closedate: ', HEALTH_REASON_PREMATURE)        else ''  END as HEALTH_REASON_PREMATURE1,
+           case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  CONCAT('(-1) Outdated (STALE): ', HEALTH_REASON_OUTDATED)            else ''  END as HEALTH_REASON_OUTDATED1,
+           case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  CONCAT('(-1) Overextended (SAND BAG): ', HEALTH_REASON_OVEREXTENDED) else ''  END  as HEALTH_REASON_OVEREXTENDED1,
+  
+           case when BOOL_BELOW_EBSTASCORE OR BOOL_OVER_MEDIAN_DAYS_IN_STAGE OR BOOL_PREMATURE_CLOSEDATE_THRESHOLD OR BOOL_OUTDATED_OPP_THRESHOLD OR BOOL_OVEREXTENDED_OPP_THRESHOLD THEN 'OppHealth Improvement Advice: ' ELSE '' END as OPP_HEALTH_TEXT,
+           
+  
+           case when not BOOL_BELOW_EBSTASCORE                THEN  '\n'  ELSE '' END  as HEALTH_REASON_EBSTA_LINEBREAK2,
+           case when not BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'  ELSE '' END  as HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK2,
+           case when not BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'  ELSE '' END  as HEALTH_REASON_PREMATURE_LINEBREAK2,
+           case when not BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'  ELSE '' END  as HEALTH_REASON_OUTDATED_LINEBREAK2,
+           case when not BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'  ELSE '' END  as HEALTH_REASON_OVEREXTENDED_LINEBREAK2,
+  
+           case when BOOL_BELOW_EBSTASCORE                THEN  '\n'  ELSE '' END  as HEALTH_REASON_EBSTA_LINEBREAK,
+           case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'  ELSE '' END  as HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK,
+           case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'  ELSE '' END  as HEALTH_REASON_PREMATURE_LINEBREAK,
+           case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'  ELSE '' END  as HEALTH_REASON_OUTDATED_LINEBREAK,
+           case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'  ELSE '' END  as HEALTH_REASON_OVEREXTENDED_LINEBREAK,
+           
+           case when BOOL_BELOW_EBSTASCORE                THEN  '- Adding contact roles to improve the ebsta score or engage with contacts on the account.'                    ELSE '' END as HEALTH_ADVICE_EBSTA,
+           case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT('- This opp has been stagnant in ', LEFT(STAGENAME, 7), ' for too long. Should this be advanced or closed?')     ELSE '' END as HEALTH_ADVICE_MEDIAN,
+           case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '- This close date is too soon. Will this opp actually close in time?'                                                  ELSE '' END as HEALTH_ADVICE_PREMATURE,
+           case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  '- This Opp has been open for too long. Should this be closed and reopened later?'                                      ELSE '' END as HEALTH_ADVICE_OUTDATED,
+           case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '- This Opp should close before the specified close date. Should this be closed and reopened later?'               ELSE '' END as HEALTH_ADVICE_EXTENDED,
+           
+           case when BOOL_BELOW_EBSTASCORE                THEN  '\n'          ELSE '' END as HEALTH_ADVICE_EBSTALINEBREAK,
+           case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'          ELSE '' END  as HEALTH_ADVICE_MEDIANLINEBREAK,
+           case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'          ELSE '' END as HEALTH_ADVICE_PREMATURELINEBREAK,
+           case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'          ELSE '' END as HEALTH_ADVICE_OUTDATEDLINEBREAK,
+           case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'          ELSE '' END  as HEALTH_ADVICE_EXTENDEDLINEBREAK,
+  
+           'For a '|| TYPE || ' '||  CURRENT_ACCTSEGMENT__SNW || ' Deal in ' || STAGENAME || ': \n' ||
+           '- Ebsta Flag           (80) \n' ||
+           '- Median Days in Stage (' ||   THRESHOLD_MEDIAN_DAYS  ||  ' days) \n' ||
+           '- Premature CloseDate  (' ||  round((MEDIAN_DAYS_TOCLOSE_BYSTAGE / 1.5),2) || ' days) \n'  ||
+           '- Outdated Opp         (' ||  TEST_OUTDATED_OPP_THRESHOLD || ' days) \n'  ||
+           '- OverExtended Opp     (' ||  TEST_OVEREXTENDED_OPP_THRESHOLD || ' days) \n' 
+            as FLAGGING_CRITERIA,
+
+          TOP_COMMENT                         ||  '\n\n'                                    ||
+          'Points Earned (+'                  || OPP_HEALTH_SCORE || ') \n\n'               ||
+          HEALTH_REASON_EBSTA2                || HEALTH_REASON_EBSTA_LINEBREAK2             ||
+          HEALTH_REASON_MEDIANDAYSINSTAGE2    || HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK2 ||
+          HEALTH_REASON_PREMATURE2            || HEALTH_REASON_PREMATURE_LINEBREAK2         || 
+          HEALTH_REASON_OUTDATED2             || HEALTH_REASON_OUTDATED_LINEBREAK2          || 
+          HEALTH_REASON_OVEREXTENDED2         || HEALTH_REASON_OVEREXTENDED_LINEBREAK2      || 
+          'Points Lost (-'                    || (5-OPP_HEALTH_SCORE) || ') \n\n'               ||
+          HEALTH_REASON_EBSTA1                || HEALTH_REASON_EBSTA_LINEBREAK              ||
+          HEALTH_REASON_MEDIANDAYSINSTAGE1    || HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK  ||
+          HEALTH_REASON_PREMATURE1            || HEALTH_REASON_PREMATURE_LINEBREAK          || 
+          HEALTH_REASON_OUTDATED1             || HEALTH_REASON_OUTDATED_LINEBREAK           || 
+          HEALTH_REASON_OVEREXTENDED1         || HEALTH_REASON_OVEREXTENDED_LINEBREAK       || 
+          OPP_HEALTH_TEXT                     || '\n\n'                                     || 
+          HEALTH_ADVICE_EBSTA                 || HEALTH_ADVICE_EBSTALINEBREAK               || 
+          HEALTH_ADVICE_MEDIAN                || HEALTH_ADVICE_MEDIANLINEBREAK              || 
+          HEALTH_ADVICE_PREMATURE             || HEALTH_ADVICE_PREMATURELINEBREAK           || 
+          HEALTH_ADVICE_OUTDATED              || HEALTH_ADVICE_OUTDATEDLINEBREAK            || 
+
+          HEALTH_ADVICE_EXTENDED                || '\n\n'                                   ||
+            'Trigger Criterion Summary'         || '\n\n'                                     || 
+            FLAGGING_CRITERIA
+  
+  as OPPORTUNITY_HEALTH_REASON
+
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON");
+  
+  
+  
+  
+  
+SELECT t1.* FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL" t1
+left join "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY" t2
+on t1.id = t2.id
+--where ID = '0066e00001f3AA7AAM'
+where t1.type = 'Renewal'
+and t2.closedate >='7/1/2021' and t2.closedate <= '12/31/2021'
+and t2.SALES_CREDIT_ARR__C > 10
+order by OPP_HEALTH_SCORE;
+ // "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_ALERT_STATUS_TEST"
+ 
+//CREATE OR REPLACE TABLE "HIGHTOUCH"."HIGHTOUCH"."CLEAR_OPPORTUNITY_HEALTH_FIELDS" 
+//AS
+//(  
+//  SELECT ID, NULL as OPPORTUNITY_HEALTH_REASON, null as OPPORTUNITY_HEALTH 
+//  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+//);
+//
+select current_date;
+
+
+
+CREATE OR REPLACE TABLE "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_FIELDS"
+AS (
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL"
+    where stagename not in ('Closed Won', 'Closed Lost', 'Disqualified')
+     --   and date(closeddate) < date(current_date)
+     --and type = 'New Business'
+  );
+
+SELECT len(FLAGGING_CRITERIA) as length, * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL" 
+--where id in ('0065A00001bwadhQAA')
+order by length desc
+;
+where UPPER(NAME) like '%PTRUCK%'
+
+or UPPER(NAME) like  '%PAYPAL - DIST%' ; 
+
+//drop table "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY";
+
+
+SELECT * FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_OPPORTUNITY"
+where type = 'New Business'
+and stagename = 'Closed Won'
+and CLOSEDATE >= '8/1/2021';
+
+
+SELECT ID, NAME, OPPORTUNITY_HEALTH__C, CLOSEDATE, dateadd(day, -1, cast(getdate() as date)) as YESTERDAY_DATE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE TYPE = 'New Business'
+AND CLOSEDATE = YESTERDAY_DATE
+;
+
+USE "PC_MATILLIONLOADER_DB";
+//THIS ALSO UPDATES THE OPPTY
+CREATE or replace PROCEDURE usp_OPP_STAGE_LIFECYCLE()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-1) - CREATE BASE OPP_STAGE_LIFECYCLE @@@@@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+                        AS
+                        (
+                            SELECT t1.ID, t1.name, t2.STAGENAME as oppstage,
+                            t2.CREATEDDATE, t1.CLOSEDATE, t1.type, t1.isclosed,
+                            CURRENT_ACCTSEGMENT__SNW,  t1.STAGENAME ,FIRST_CALL_DATE__C,FIRST_CALL_RESULT__C--, 
+                          --    * 
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+                            LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+                            on t1.id = t2.OPPORTUNITYID
+                            WHERE t1.CLOSEDATE >= '1/1/2020'
+                            order by t1.ID, t2.CREATEDDATE
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-3) - FIND OPPS WITH UNWANTED STAGENAMES @@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    // return ID's of opps with unwanted stage convention
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES"
+                        as
+                        (
+                            SELECT t1.ID --t2.STAGENAME
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+                            LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+                            on t1.id = t2.OPPORTUNITYID
+                            WHERE t2.STAGENAME IN  ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                                                'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                                                'Trial - Completed', 'Trial - Active', 'Demo',
+                                                    'Stage 2: In Active Scope',
+                                                    'Stage 5: SOW Execution')
+                            group by t1.ID
+                            order by t1.ID
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-4) - EXCLUDE OPPS WITH UNWANTED STAGE FROM BASE @@@@@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    var sql_command = ` CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                      as
+                      (
+                        SELECT  ID, NAME, OPPSTAGE, TYPE, ISCLOSED ,
+                            CURRENT_ACCTSEGMENT__SNW, stagename
+                        , MIN(CREATEDDATE) as MIN_CREATEDATE,FIRST_CALL_DATE__C
+                        --, case when ID in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES") THEN TRUE ELSE FALSE END as HAS_OLD_OPPSTAGE
+                        FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+                        WHERE OPPSTAGE not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                                              'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                                              'Trial - Completed', 'Trial - Active', 'Demo',
+                                                  'Stage 2: In Active Scope',
+                                                  'Stage 5: SOW Execution')
+                        group by ID, NAME, OPPSTAGE,  TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename, FIRST_CALL_DATE__C--, HAS_OLD_OPPSTAGE
+                        order by  ID, NAME,  MIN(CREATEDDATE) 
+                      )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    //Find Stage 0 Date
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S0DATE"
+                        as
+                        ( 
+                          SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+                                   AS MIN_SALES_CYCLE_STARTDATE,
+                          * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                          WHERE 
+                          OPPSTAGE = 'Stage 0: First Call'
+                          ORDER BY ID, OPPSTAGE
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                        
+                        
+   // Find Stage 1 Date
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S1DATE"
+                        as
+                        ( 
+                          SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+                                   AS MIN_SALES_CYCLE_STARTDATE,
+                          * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                          WHERE 
+                          OPPSTAGE = 'Stage 1: Initial Engagement'
+                          ORDER BY ID, OPPSTAGE
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                        
+                              
+   // Find Stage X Date
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_SXDATE"
+                      as
+                      ( 
+                        SELECT * FROM 
+                        (
+                        SELECT MIN(MIN_CREATEDATE) over (PARTITION BY ID ORDER BY MIN_CREATEDATE)
+                                 AS MIN_SALES_CYCLE_STARTDATE,
+                               RANK() over  (PARTITION BY ID ORDER BY MIN_CREATEDATE asc) as MIN_DATE_RANK,
+                        * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                        WHERE 
+                        OPPSTAGE not in ('Stage 0: First Call','Stage 1: Initial Engagement','Closed Won','Closed Lost', 'Disqualified')
+                        ORDER BY ID, OPPSTAGE
+                        )
+                        WHERE MIN_DATE_RANK = 1
+                      )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-5) - OFFSET MINIMUM CREATE DATE BY STAGE @@@@@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+                        as
+                        (
+                            SELECT *,
+                            lag(MIN_CREATEDATE) over (partition by ID order by NAME, MIN_CREATEDATE desc) as date_offset
+                            FROM  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+                            order by   ID, NAME, MIN_CREATEDATE desc
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                          
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-6) - CALCULATE DATE DELTA FOR DAYS IN STAGE @@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+    var sql_command = `CREATE OR REPLACE VIEW "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+                       as 
+                       (
+                          SELECT *,
+                          date(DATE_OFFSET) as Offset_date,  date(MIN_CREATEDATE) as min_createddate ,
+                          date(DATE_OFFSET) - date(MIN_CREATEDATE) as days_in_stage
+                          FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+                       )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                    
+
+
+  return 'Done.';
+  $$;
+                          
+                         
+CREATE or replace PROCEDURE usp_OPP_STAGE_LIFECYCLE_PIVOTS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-7) - PIVOT ON MEDIAN DAYS IN STAGE BY SEGMENT @@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                         
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+                        as
+                        (
+                        SELECT * 
+                          FROM
+                          (SELECT TYPE, CURRENT_ACCTSEGMENT__SNW,OPPSTAGE,DAYS_IN_STAGE--, * 
+                          FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+                          WHERE TYPE in ('New Business', 'Renewal', 'Upsell') AND
+                            STAGENAME = 'Closed Won'
+                            and OPPSTAGE in ('Stage 0: First Call',
+                                             'Stage 1: Initial Engagement',
+                                             'Stage 2: Discovery',
+                                             'Stage 3: Business & Solution Alignment',
+                                             'Stage 4: Validation',
+                                             'Stage 5: Negotiation'))
+                                PIVOT(Median(DAYS_IN_STAGE) for OPPSTAGE in ('Stage 0: First Call',
+                                                                             'Stage 1: Initial Engagement',
+                                                                             'Stage 2: Discovery',
+                                                                             'Stage 3: Business & Solution Alignment',
+                                                                             'Stage 4: Validation',
+                                                                             'Stage 5: Negotiation')) as p
+                        ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-7A) - SUM PIVOT TO FIND MED DAYS OPEN AND CLOSE @@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+        var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+                            as
+                            (
+                            SELECT 
+                            *
+                            ,cast("'Stage 0: First Call'" as DOUBLE) as S0
+                            ,cast("'Stage 1: Initial Engagement'" as DOUBLE)  as S1
+                            ,cast("'Stage 2: Discovery'" as DOUBLE)  as S2
+                            ,cast("'Stage 3: Business & Solution Alignment'" as DOUBLE)  as S3
+                            ,cast("'Stage 4: Validation'" as DOUBLE)  as S4
+                            ,cast("'Stage 5: Negotiation'" as DOUBLE)  as S5
+                            ,S0 as S0_MEDIAN_DAYS_OPEN
+                            ,S0+S1 as S1_MEDIAN_DAYS_OPEN
+                            ,S0+S1+S2 as S2_MEDIAN_DAYS_OPEN
+                            ,S0+S1+S2+S3 as S3_MEDIAN_DAYS_OPEN
+                            ,S0+S1+S2+S3+S4 as S4_MEDIAN_DAYS_OPEN
+                            ,S0+S1+S2+S3+S4+S5 as S5_MEDIAN_DAYS_OPEN
+                            ,S0+S1+S2+S3+S4+S5 as S0_MEDIAN_DAYS_TO_CLOSE
+                            ,S1+S2+S3+S4+S5 as S1_MEDIAN_DAYS_TO_CLOSE
+                            ,S2+S3+S4+S5 as S2_MEDIAN_DAYS_TO_CLOSE
+                            ,S3+S4+S5 as S3_MEDIAN_DAYS_TO_CLOSE
+                            ,S4+S5 as S4_MEDIAN_DAYS_TO_CLOSE
+                            ,S5 as S5_MEDIAN_DAYS_TO_CLOSE
+                            FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+                              ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                            )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                              
+                              
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-7B) - SETUP MEDIAN DAYS OPEN TO BE UNPIVOTED @@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+                        as
+                        (
+                        SELECT 
+                          TYPE, CURRENT_ACCTSEGMENT__SNW
+                        ,S0_MEDIAN_DAYS_OPEN AS "Stage 0: First Call"
+                        ,S1_MEDIAN_DAYS_OPEN AS "Stage 1: Initial Engagement"
+                        ,S2_MEDIAN_DAYS_OPEN AS "Stage 2: Discovery"
+                        ,S3_MEDIAN_DAYS_OPEN AS "Stage 3: Business & Solution Alignment"
+                        ,S4_MEDIAN_DAYS_OPEN AS "Stage 4: Validation"
+                        ,S5_MEDIAN_DAYS_OPEN AS "Stage 5: Negotiation"
+
+                          FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+                            ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                        )`;
+                          
+                          
+                          
+                          
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                              
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-7C) - UNPIVOT MEDIAN DAYS OPEN @@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                                           
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT"
+                        as
+                        (
+                        select TYPE, CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_OPEN_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+                            unpivot(MEDIAN_DAYS_OPEN_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                                                    "Stage 1: Initial Engagement",
+                                                    "Stage 2: Discovery",
+                                                    "Stage 3: Business & Solution Alignment",
+                                                    "Stage 4: Validation",
+                                                    "Stage 5: Negotiation"))
+                        ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                               
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@@@@@@@ (TOC-7D) - SETUP MEDIAN DAYS TO CLOSE TO BE UNPIVOTED @@
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                                
+                          
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+                        as
+                        (
+                        SELECT 
+                          TYPE,
+                          CURRENT_ACCTSEGMENT__SNW
+                        ,S0_MEDIAN_DAYS_TO_CLOSE AS "Stage 0: First Call"
+                        ,S1_MEDIAN_DAYS_TO_CLOSE AS "Stage 1: Initial Engagement"
+                        ,S2_MEDIAN_DAYS_TO_CLOSE AS "Stage 2: Discovery"
+                        ,S3_MEDIAN_DAYS_TO_CLOSE AS "Stage 3: Business & Solution Alignment"
+                        ,S4_MEDIAN_DAYS_TO_CLOSE AS "Stage 4: Validation"
+                        ,S5_MEDIAN_DAYS_TO_CLOSE AS "Stage 5: Negotiation"
+
+                          FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();     
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7E) - UNPIVOT  MEDIAN DAYS TO CLOSE @@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                          
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT"
+                        as
+                        (
+                        select TYPE, CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_TOCLOSE_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+                            unpivot(MEDIAN_DAYS_TOCLOSE_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                                                    "Stage 1: Initial Engagement",
+                                                    "Stage 2: Discovery",
+                                                    "Stage 3: Business & Solution Alignment",
+                                                    "Stage 4: Validation",
+                                                    "Stage 5: Negotiation"))
+                        ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                       
+                          
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8) - UNPIVOT MEDIAN DAYS IN STAGE BY SEGMENT @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                          
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT"
+                        as
+                        (
+                        select TYPE, CURRENT_ACCTSEGMENT__SNW, REPLACE(OPPSTAGE,'''') as OPPSTAGE, MEDIAN_DAYS_IN_STAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+                            unpivot(MEDIAN_DAYS_IN_STAGE for OPPSTAGE in ("'Stage 0: First Call'",
+                                                    "'Stage 1: Initial Engagement'",
+                                                    "'Stage 2: Discovery'",
+                                                    "'Stage 3: Business & Solution Alignment'",
+                                                    "'Stage 4: Validation'",
+                                                    "'Stage 5: Negotiation'"))
+                        ORDER BY TYPE,CURRENT_ACCTSEGMENT__SNW
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                       
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8A) - SUMMARIZE MEDIAN DAYS CALCULATIONS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                          
+                          
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT"
+                        as
+                        (
+                            SELECT 
+                                t1.TYPE
+                                ,t1.CURRENT_ACCTSEGMENT__SNW
+                                ,t1.OPPSTAGE
+                                ,t1.MEDIAN_DAYS_IN_STAGE
+                                ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+                                ,t3.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+                            FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT" t1 
+                            LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT" t2
+                                ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+                                and t1.OPPSTAGE = t2.OPPSTAGE
+                                and t1.type = t2.type
+                            LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT" t3
+                                ON t1.CURRENT_ACCTSEGMENT__SNW = t3.CURRENT_ACCTSEGMENT__SNW
+                                and t1.OPPSTAGE = t3.OPPSTAGE
+                                and t1.type = t3.type
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                           
+                          
+                          
+                          
+  return 'Done.';
+  $$;
+                        
+//// LAST HERE
+                         
+CREATE or replace PROCEDURE usp_OPP_STAGE_LIFECYCLE_DAYSINSTAGE()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-9) - FIND # OF DAYS AN OPP HAS BEEN IN STAGE @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                  
+                          
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS"
+                      as
+                      (
+                      SELECT t1.ID, t1.NAME, TYPE,t1.STAGENAME,
+                        MIN(t2.CREATEDDATE) as FIRSTDAYINSTAGE,
+                        DATE(CURRENT_DATE()) - DATE(MIN(t2.CREATEDDATE)) as DAYS_IN_STAGE__SNW
+
+                      FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+                      LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+                      ON t1.ID = t2.OPPORTUNITYID
+                          AND t1.STAGENAME = t2.STAGENAME
+                      WHERE ISCLOSED = FALSE
+                      group by 1,2,3,4
+                      order by 1,2,3,4
+                      )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();     
+ 
+                        
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP1"
+                        as
+                        (
+                          SELECT 
+                          t2.OPPSTAGE as S0_STAGE,
+                          t2.MIN_SALES_CYCLE_STARTDATE as  S0_MIN_DATE,
+                          t3.OPPSTAGE as S1_STAGE,
+                          t3.MIN_SALES_CYCLE_STARTDATE S1_MIN_DATE,
+                          t4.OPPSTAGE as SX_STAGE,
+                          t4.MIN_SALES_CYCLE_STARTDATE SX_MIN_DATE,
+
+                          t1.*
+                          FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+                            LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S0DATE" t2
+                            on t1.ID = t2.ID
+                            LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_S1DATE" t3
+                            on t1.ID = t3.ID
+                            LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)_SXDATE" t4
+                            on t1.ID = t4.ID
+                          order by stagename, closedate
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                         
+                        
+                        
+    var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP2"
+                        as
+                        (
+                        SELECT --closedate,
+
+                          CASE WHEN FIRST_CALL_DATE__C is not NULL and FIRST_CALL_RESULT__C like '%Complete%' then FIRST_CALL_DATE__C  
+                              WHEN S1_MIN_DATE is not NULL then S1_MIN_DATE 
+                               WHEN S0_MIN_DATE is not NULL then S0_MIN_DATE
+                                WHEN SX_MIN_DATE is not NULL then SX_MIN_DATE
+                          else NULL end as BEST_SALES_START_DATE,
+                          CASE WHEN FIRST_CALL_DATE__C is not NULL and FIRST_CALL_RESULT__C like '%Complete%' then 'FIRST_CALL'
+                              WHEN S1_MIN_DATE is not NULL then S1_STAGE 
+                               WHEN S0_MIN_DATE is not NULL then S0_STAGE
+                                WHEN SX_MIN_DATE is not NULL then SX_STAGE
+                          else NULL end as BEST_SALES_START_STAGE,
+                           case when ID in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES") THEN TRUE ELSE FALSE END as HAS_OLD_OPPSTAGE
+                          ,
+                          --type, NAME,createddate,FIRST_CALL_DATE__C,
+
+                          * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP1"
+                          where closedate >= '1/1/2020'
+                          and stagename not in ('Closed Lost','Disqualified')
+                          and type in ('New Business', 'Renewal', 'Upsell')
+                          order by 2 desc,1 desc
+                        )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                      
+                        
+        var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE"
+                            AS (
+                                SELECT 
+                                t1.ID
+                                ,t1.NAME
+                                ,t1.TYPE
+                                ,t1.CURRENT_ACCTSEGMENT__SNW
+                                ,t1.CREATEDDATE
+                                ,t1.stagename
+                                ,t1.MATILLION_UPDATED_TIMESTAMP as SFDC_Refresh_Time
+                                ,t3.BEST_SALES_START_DATE
+                                ,t3.BEST_SALES_START_STAGE
+                                ,t3.HAS_OLD_OPPSTAGE
+                                ,t2.MEDIAN_DAYS_IN_STAGE
+                                ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+                                ,t2.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+                                , t1.SALES_CREDIT_ARR__C
+                                , t1.DAYS_TO_CLOSE__C
+                                ,t1.EBSTA1__EBSTA_SCORE__C
+                                ,date(current_date()) - date(t1.CREATEDDATE) as DAYS_OPEN
+                                  ,date(current_date()) - date(t3.BEST_SALES_START_DATE) as DAYS_OPEN_SalesAdjusted
+                                ,date(t1.closedate) - date(current_date()) as DAYS_TO_CLOSE
+                                ,t4.DAYS_IN_STAGE__SNW
+                                  ,t4.FIRSTDAYINSTAGE
+
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+                            left join  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT" t2
+                            ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+                            AND t1.STAGENAME = t2.OPPSTAGE
+                              and t1.type = t2.type
+                            left join "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_SALES_START_DATE_TMP2" t3
+                            on t1.ID = t3.ID
+                            LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS" t4
+                            ON t1.ID = t4.ID
+                            WHERE t1.STAGENAME in ('Stage 0: First Call',
+                                                   'Stage 1: Initial Engagement',
+                                                   'Stage 2: Discovery',
+                                                   'Stage 3: Business & Solution Alignment',
+                                                   'Stage 4: Validation',
+                                                   'Stage 5: Negotiation')
+                            )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                     
+                        
+                        
+                        
+  return 'Done.';
+  $$;                          
+
+                          
+  CREATE or replace PROCEDURE usp_OPP_HEALTHSCORE()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+        var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS"
+                          as
+                          (
+
+
+                          // AS INTEGER  
+                          SELECT
+                              t1.*
+                              // MEDIAN DAYS IN STAGE TEST
+                              ,CASE 
+                                  WHEN t1.DAYS_IN_STAGE__SNW >= (t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE  ) 
+                                  THEN 0 
+                                  ELSE 1 end as OVER_MEDIAN_DAYS_IN_STAGE
+
+                              ,t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE as THRESHOLD_MEDIAN_DAYS
+                              ,t1.DAYS_IN_STAGE__SNW as OPP_STAGE_DAYS_IN_STAGE
+                              ,t2.MEDIAN_MULTIPLE
+
+                              // EBSTA SCORE TEST
+                              ,CASE WHEN t1.EBSTA1__EBSTA_SCORE__C < t2.EBSTA_SCORE_THRESHOLD 
+                                    THEN 0 
+                                    ELSE 1 end as BELOW_EBSTASCORE
+                              ,t2.EBSTA_SCORE_THRESHOLD as THRESHOLD_EBSTA_SCORE
+                              ,t1.EBSTA1__EBSTA_SCORE__C as OPP_EBSTA_SCORE
+
+                              // PREMATURE CLOSE DATE TEST
+                              ,CASE
+                                  WHEN  MEDIAN_DAYS_TOCLOSE_BYSTAGE > (DAYS_IN_STAGE__SNW + DAYS_TO_CLOSE) *1.5 
+                                  THEN 0 
+                                  ELSE 1 end as PREMATURE_CLOSEDATE_THRESHOLD
+                              ,MEDIAN_DAYS_TOCLOSE_BYSTAGE as THRESHOLD_DAYS_TOCLOSE
+                              ,DAYS_TO_CLOSE as OPP_DAYS_TO_CLOSE
+                              ,(DAYS_IN_STAGE__SNW + DAYS_TO_CLOSE) *1.5 as TEST_PREMATURE_CLOSEDATE_THRESHOLD
+
+                              // OUTDATED OPP TEST
+                               ,CASE 
+                                  WHEN t1.DAYS_OPEN >= (2.5 * t1.MEDIAN_DAYS_OPEN_BYSTAGE  ) 
+                                  THEN 0 
+                                  ELSE 1 end as OUTDATED_OPP_THRESHOLD
+                              ,MEDIAN_DAYS_OPEN_BYSTAGE * 2.5 as TEST_OUTDATED_OPP_THRESHOLD
+                              ,DAYS_OPEN as OPP_DAYS_OPEN
+                              ,2.5 as DAYS_OPEN_MULTIPLE 
+
+                             // OVEREXTENDED OPP TEST
+                               ,CASE 
+                                  WHEN t1.DAYS_TO_CLOSE >= (2.5 * t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE  ) 
+                                  THEN 0 
+                                  ELSE 1 end as OVEREXTENDED_OPP_THRESHOLD
+                               ,t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE*2.5  as TEST_OVEREXTENDED_OPP_THRESHOLD  
+                               ,t1.DAYS_TO_CLOSE  as OPP_DAYS_TO_CLOSE2
+                               ,2.5 as DAY_TOCLOSE_MULTIPLE
+
+                               , (OVER_MEDIAN_DAYS_IN_STAGE + BELOW_EBSTASCORE + PREMATURE_CLOSEDATE_THRESHOLD + OUTDATED_OPP_THRESHOLD + OVEREXTENDED_OPP_THRESHOLD) AS OPP_HEALTH_SCORE
+
+
+
+                             // FOR BOOLEAN TESTING
+                              ,CASE
+                                  WHEN OPP_HEALTH_SCORE >= 4  THEN 'GREEN'
+                                  WHEN OPP_HEALTH_SCORE = 3  THEN 'YELLOW'
+                                  WHEN OPP_HEALTH_SCORE <= 2  THEN 'RED' END AS OPP_HEALTH
+
+                               ,CASE 
+                                  WHEN t1.DAYS_IN_STAGE__SNW >= (t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE  ) 
+                                  THEN TRUE 
+                                  ELSE FALSE end as  BOOL_OVER_MEDIAN_DAYS_IN_STAGE
+
+                              ,CASE WHEN t1.EBSTA1__EBSTA_SCORE__C < t2.EBSTA_SCORE_THRESHOLD 
+                                    THEN TRUE 
+                                    ELSE FALSE end as BOOL_BELOW_EBSTASCORE
+
+                              ,CASE
+                                  WHEN  MEDIAN_DAYS_TOCLOSE_BYSTAGE > (DAYS_IN_STAGE__SNW + DAYS_TO_CLOSE) *1.5  
+                                  THEN TRUE 
+                                  ELSE FALSE end as BOOL_PREMATURE_CLOSEDATE_THRESHOLD
+
+                               ,CASE 
+                                  WHEN t1.DAYS_OPEN >= (2.5 * t1.MEDIAN_DAYS_OPEN_BYSTAGE  ) 
+                                  THEN TRUE 
+                                  ELSE FALSE end as BOOL_OUTDATED_OPP_THRESHOLD
+
+                               ,CASE 
+                                  WHEN t1.DAYS_TO_CLOSE >= (2.5 * t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE  ) 
+                                  THEN TRUE 
+                                  ELSE FALSE end as BOOL_OVEREXTENDED_OPP_THRESHOLD
+
+
+
+                          FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE" t1
+                          LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_ALERT_INPUT_SHEET" t2
+                          ON  t1.CURRENT_ACCTSEGMENT__SNW = t2.Segment
+                              and t1.type = t2.type
+                          --where t1.type = 'New Business'
+                          )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+                            
+        var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON" 
+                            AS
+                          (SELECT *,
+                           CONCAT('The ebsta score threshold is 80. This Opp has an ebsta score of ', OPP_EBSTA_SCORE, '.') as HEALTH_REASON_EBSTA,
+                           CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity advances stages by ', CAST(MEDIAN_DAYS_IN_STAGE AS NUMBER(9,1)), ' days. This Opp has been in ', LEFT(STAGENAME, 7), ' for ',  CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)), ' days.')
+                                  as HEALTH_REASON_MEDIANDAYSINSTAGE,
+                           CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity needs ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days to close. This Opp has been in ', LEFT(STAGENAME, 7),  ' for ', CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)), 
+                                ' days,', ' and closes in ', DAYS_TO_CLOSE , ' days',
+                                
+                                ' which is ',  
+                                    ABS(DAYS_TO_CLOSE + CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)) - MEDIAN_DAYS_TOCLOSE_BYSTAGE),' days ', 
+                                    case when DAYS_TO_CLOSE + CAST(DAYS_IN_STAGE__SNW AS NUMBER(9,1)) - MEDIAN_DAYS_TOCLOSE_BYSTAGE > 0 then 'more' else 'less' end
+                                    ,' than expected.')
+                                  as HEALTH_REASON_PREMATURE,
+//                                                       CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity needs ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days to close. This Opp is set to close in ', DAYS_TO_CLOSE, ' days, which is ', MEDIAN_DAYS_TOCLOSE_BYSTAGE - DAYS_TO_CLOSE ,' days earlier than expected.')
+//                                  as HEALTH_REASON_PREMATURE,
+                           CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity has been open for no longer than ', MEDIAN_DAYS_OPEN_BYSTAGE, ' days. This Opp has been open for ', DAYS_OPEN, ' days.'
+                                              ,'This is based on a createdate of ', date(Createddate)  --BEST_SALES_START_DATE,BEST_SALES_START_STAGE
+                                              )
+                                    AS HEALTH_REASON_OUTDATED,
+                           CONCAT('An ideal ' , LEFT(STAGENAME, 7), ' ', CURRENT_ACCTSEGMENT__SNW,' opportunity closes in ', MEDIAN_DAYS_TOCLOSE_BYSTAGE, ' days. This Opp is set to close in ',  DAYS_TO_CLOSE, ' days.')
+                               AS HEALTH_REASON_OVEREXTENDED
+                           FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS")`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();                         
+    
+                            
+  return 'Done.';
+  $$;    
+                          
+    CREATE or replace PROCEDURE usp_OPP_HEALTH_SFDC_OUTPUT()
+    RETURNS VARCHAR
+    LANGUAGE javascript
+    AS
+    $$
+      
+     var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL" 
+                          AS
+                      (
+                      SELECT *, 
+
+
+                                 'When compared to Closed Won '|| TYPE || ' '||  CURRENT_ACCTSEGMENT__SNW || ' Deals in ' || STAGENAME ||
+                                 ', this Opp is in ' || OPP_HEALTH || ' with a score of ' || OPP_HEALTH_SCORE || '/5.' as TOP_COMMENT,  
+
+                                 case when not BOOL_BELOW_EBSTASCORE                THEN  CONCAT(' (+1) Above Ebsta Score: ', HEALTH_REASON_EBSTA)                    else ''     END  as HEALTH_REASON_EBSTA2,
+                                 case when not BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT(' (+1) Not Over Median Days: ', HEALTH_REASON_MEDIANDAYSINSTAGE)   else ''     END  as HEALTH_REASON_MEDIANDAYSINSTAGE2,
+                                 case when not BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  CONCAT(' (+1) Not Premature Closedate: ', HEALTH_REASON_PREMATURE)        else ''     END as HEALTH_REASON_PREMATURE2,
+                                 case when not BOOL_OUTDATED_OPP_THRESHOLD          THEN  CONCAT(' (+1) Not Outdated (STALE): ', HEALTH_REASON_OUTDATED)            else ''     END as HEALTH_REASON_OUTDATED2,
+                                 case when not BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  CONCAT(' (+1) Not Overextended (SAND BAG): ', HEALTH_REASON_OVEREXTENDED) else ''     END  as HEALTH_REASON_OVEREXTENDED2,
+
+
+                                 case when BOOL_BELOW_EBSTASCORE                THEN  CONCAT(' (-1) Ebsta Score: ', HEALTH_REASON_EBSTA)                    else ''  END  as HEALTH_REASON_EBSTA1,
+                                 case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT(' (-1) Over Median Days: ', HEALTH_REASON_MEDIANDAYSINSTAGE)   else ''  END  as HEALTH_REASON_MEDIANDAYSINSTAGE1,
+                                 case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  CONCAT(' (-1) Premature Closedate: ', HEALTH_REASON_PREMATURE)        else ''  END as HEALTH_REASON_PREMATURE1,
+                                 case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  CONCAT(' (-1) Outdated (STALE): ', HEALTH_REASON_OUTDATED)            else ''  END as HEALTH_REASON_OUTDATED1,
+                                 case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  CONCAT(' (-1) Overextended (SAND BAG): ', HEALTH_REASON_OVEREXTENDED) else ''  END  as HEALTH_REASON_OVEREXTENDED1,
+
+                                 case when BOOL_BELOW_EBSTASCORE OR BOOL_OVER_MEDIAN_DAYS_IN_STAGE OR BOOL_PREMATURE_CLOSEDATE_THRESHOLD OR BOOL_OUTDATED_OPP_THRESHOLD OR BOOL_OVEREXTENDED_OPP_THRESHOLD THEN 'OppHealth Improvement Advice: ' ELSE '' END as OPP_HEALTH_TEXT,
+
+
+                                 case when not BOOL_BELOW_EBSTASCORE                THEN  '\n'  ELSE '' END  as HEALTH_REASON_EBSTA_LINEBREAK2,
+                                 case when not BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'  ELSE '' END  as HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK2,
+                                 case when not BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'  ELSE '' END  as HEALTH_REASON_PREMATURE_LINEBREAK2,
+                                 case when not BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'  ELSE '' END  as HEALTH_REASON_OUTDATED_LINEBREAK2,
+                                 case when not BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'  ELSE '' END  as HEALTH_REASON_OVEREXTENDED_LINEBREAK2,
+
+                                 case when BOOL_BELOW_EBSTASCORE                THEN  '\n'  ELSE '' END  as HEALTH_REASON_EBSTA_LINEBREAK,
+                                 case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'  ELSE '' END  as HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK,
+                                 case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'  ELSE '' END  as HEALTH_REASON_PREMATURE_LINEBREAK,
+                                 case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'  ELSE '' END  as HEALTH_REASON_OUTDATED_LINEBREAK,
+                                 case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'  ELSE '' END  as HEALTH_REASON_OVEREXTENDED_LINEBREAK,
+
+                                 case when BOOL_BELOW_EBSTASCORE                THEN  ' - Adding contact roles to improve the ebsta score or engage with contacts on the account.'                    ELSE '' END as HEALTH_ADVICE_EBSTA,
+                                 case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  CONCAT(' - This opp has been stagnant in ', LEFT(STAGENAME, 7), ' for too long. Should this be advanced or closed?')     ELSE '' END as HEALTH_ADVICE_MEDIAN,
+                                 case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  ' - This close date is too soon. Will this opp actually close in time?'                                                  ELSE '' END as HEALTH_ADVICE_PREMATURE,
+                                 case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  ' - This Opp has been open for too long. Should this be closed and reopened later?'                                      ELSE '' END as HEALTH_ADVICE_OUTDATED,
+                                 case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  ' - This Opp should close before the specified close date. Should this be closed and reopened later?'               ELSE '' END as HEALTH_ADVICE_EXTENDED,
+
+                                 case when BOOL_BELOW_EBSTASCORE                THEN  '\n'          ELSE '' END as HEALTH_ADVICE_EBSTALINEBREAK,
+                                 case when BOOL_OVER_MEDIAN_DAYS_IN_STAGE       THEN  '\n'          ELSE '' END  as HEALTH_ADVICE_MEDIANLINEBREAK,
+                                 case when BOOL_PREMATURE_CLOSEDATE_THRESHOLD   THEN  '\n'          ELSE '' END as HEALTH_ADVICE_PREMATURELINEBREAK,
+                                 case when BOOL_OUTDATED_OPP_THRESHOLD          THEN  '\n'          ELSE '' END as HEALTH_ADVICE_OUTDATEDLINEBREAK,
+                                 case when BOOL_OVEREXTENDED_OPP_THRESHOLD      THEN  '\n'          ELSE '' END  as HEALTH_ADVICE_EXTENDEDLINEBREAK,
+
+                                 'For a '|| TYPE || ' '||  CURRENT_ACCTSEGMENT__SNW || ' Deal in ' || STAGENAME || ': \n' ||
+                                 ' - Ebsta Flag           (80) \n' ||
+                                 ' - Median Days in Stage (' ||   THRESHOLD_MEDIAN_DAYS  ||  ' days) \n' ||
+                                 ' - Premature CloseDate  (' ||  round((MEDIAN_DAYS_TOCLOSE_BYSTAGE / 1.5),2) || ' days) \n'  ||
+                                 ' - Outdated Opp         (' ||  TEST_OUTDATED_OPP_THRESHOLD || ' days) \n'  ||
+                                 ' - OverExtended Opp     (' ||  TEST_OVEREXTENDED_OPP_THRESHOLD || ' days) \n\n' ||
+                                 ' Last Refresh from SFDC     ' || left(SFDC_Refresh_Time,19) || '\n'        ||
+                                 ' Last Data Calculation Date ' || left(current_timestamp(),19) 
+                                
+                                  as FLAGGING_CRITERIA,
+
+                                TOP_COMMENT                         ||  '\n\n'                                    ||
+                                'Points Earned (+'                  || OPP_HEALTH_SCORE || ') \n\n'               ||
+                                HEALTH_REASON_EBSTA2                || HEALTH_REASON_EBSTA_LINEBREAK2             ||
+                                HEALTH_REASON_MEDIANDAYSINSTAGE2    || HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK2 ||
+                                HEALTH_REASON_PREMATURE2            || HEALTH_REASON_PREMATURE_LINEBREAK2         || 
+                                HEALTH_REASON_OUTDATED2             || HEALTH_REASON_OUTDATED_LINEBREAK2          || 
+                                HEALTH_REASON_OVEREXTENDED2         || HEALTH_REASON_OVEREXTENDED_LINEBREAK2      || 
+                                '\n'                                ||
+                                'Points Lost (-'                    || (5-OPP_HEALTH_SCORE) || ') \n\n'           ||
+                                HEALTH_REASON_EBSTA1                || HEALTH_REASON_EBSTA_LINEBREAK              ||
+                                HEALTH_REASON_MEDIANDAYSINSTAGE1    || HEALTH_REASON_MEDIANDAYSINSTAGE_LINEBREAK  ||
+                                HEALTH_REASON_PREMATURE1            || HEALTH_REASON_PREMATURE_LINEBREAK          || 
+                                HEALTH_REASON_OUTDATED1             || HEALTH_REASON_OUTDATED_LINEBREAK           || 
+                                HEALTH_REASON_OVEREXTENDED1         || HEALTH_REASON_OVEREXTENDED_LINEBREAK       || 
+                                '\n'                                ||
+                                OPP_HEALTH_TEXT                     || '\n\n'                                     || 
+                                HEALTH_ADVICE_EBSTA                 || HEALTH_ADVICE_EBSTALINEBREAK               || 
+                                HEALTH_ADVICE_MEDIAN                || HEALTH_ADVICE_MEDIANLINEBREAK              || 
+                                HEALTH_ADVICE_PREMATURE             || HEALTH_ADVICE_PREMATURELINEBREAK           || 
+                                HEALTH_ADVICE_OUTDATED              || HEALTH_ADVICE_OUTDATEDLINEBREAK            || 
+
+                                HEALTH_ADVICE_EXTENDED                || '\n\n'                                   ||
+                                  'Trigger Criterion Summary'         || '\n\n'                                   || 
+                                  FLAGGING_CRITERIA
+
+                        as OPPORTUNITY_HEALTH_REASON
+
+                        FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON")`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+     
+                        
+        var sql_command = `CREATE OR REPLACE TABLE "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_FIELDS"
+                          AS (
+                            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_REASON_FINAL"
+                              where stagename not in ('Closed Won', 'Closed Lost', 'Disqualified')
+                               --   and date(closeddate) < date(current_date)
+                               --and type = 'New Business'
+                            )`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                                            
+                        
+    return 'Done.';
+    $$;                                  
+                          
+//  CREATE or replace PROCEDURE usp_OPP_STAGE_LIFECY3243242CLE_PIVOTS()
+//  RETURNS VARCHAR
+//  LANGUAGE javascript
+//  AS
+//  $$
+//    
+// 
+//  return 'Done.';
+//  $$;          
+                          
+CALL usp_OPP_STAGE_LIFECYCLE();
+CALL usp_OPP_STAGE_LIFECYCLE_PIVOTS();
+CALL usp_OPP_STAGE_LIFECYCLE_DAYSINSTAGE();
+CALL usp_OPP_HEALTHSCORE();
+CALL usp_OPP_HEALTH_SFDC_OUTPUT();
+
+//         select left(current_timestamp(),19);               
+                        
+                          
+  CREATE or replace PROCEDURE usp_RUN_ALL_OPPHEALTH()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+    var sql_command = `CALL usp_OPP_STAGE_LIFECYCLE()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                            
+    var sql_command = `CALL usp_OPP_STAGE_LIFECYCLE_PIVOTS()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                            
+    var sql_command = `CALL usp_OPP_STAGE_LIFECYCLE_DAYSINSTAGE()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                            
+    var sql_command = `CALL usp_OPP_HEALTHSCORE()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+                        
+                            
+    var sql_command = `CALL usp_OPP_HEALTH_SFDC_OUTPUT()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+ 
+  return 'Done.';
+  $$;       
+                        
+CALL usp_RUN_ALL_OPPHEALTH();
+                        
+ SELECT * FROM "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_FIELDS" where OPP_HEALTH_SCORE = 4;
+              USE "TABLEAU_REPORTING"      ;
+ CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_OPPORTUNITY_HEALTH"
+                        as
+(SELECT * FROM "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_FIELDS");
+                        
+                        
+                        
+                        SELECT * FROM "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_FIELDS"
+                        where name like '%Paypal%';
+                        where PREMATURE_CLOSEDATE_THRESHOLD = 0;
+SELECT * FROM "LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY";
