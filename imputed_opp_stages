@@ -1,0 +1,80 @@
+// This is used to impute the opportunity stages for each opportunity
+// This analysis is needed because SFDC does not capture EVERY stage that an opportunity passes through
+// Therefore if you want to close the stage to stage close rate, this cannot be done natively with the OPP and OPP HISTORY data from SFDC
+// Based on the highest stage in the opportunity history, we can assume that previous stages have been reached 
+
+//PIVOT TO GET STAGENAMES AS FIELDS
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"
+as 
+SELECT OPPORTUNITYID, min("'Stage 0: First Call'") as s0_date, min("'Stage 1: Initial Engagement'") as s1_date, min("'Stage 2: Discovery'") as s2_date,
+min("'Stage 3: Business & Solution Alignment'") as s3_date,min("'Stage 4: Validation'") as s4_date, min("'Stage 5: Negotiation'") as s5_date, 
+min("'Closed Won'") as cw_date, min("'Closed Lost'") as cl_date, min("'Disqualified'") as dq_date
+FROM 
+(
+    select *
+  from MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITYHISTORY
+
+    pivot(min(CREATEDDATE) for STAGENAME in ('Stage 0: First Call', 'Stage 1: Initial Engagement', 'Stage 2: Discovery',
+                           'Stage 3: Business & Solution Alignment', 'Stage 4: Validation', 'Stage 5: Negotiation',
+                           'Closed Won', 'Closed Lost', 'Disqualified'))
+      as p
+) t
+group by OPPORTUNITYID;
+
+
+// ADD 'STAGE REACHED' FIELD
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s0_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s1_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s2_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s3_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s4_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s5_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD cw_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD cl_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD dq_reached varchar(100);
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD higheststage_reached varchar(100);
+
+// UPDATE 'Stage Reached' Fields 
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"
+    SET s0_reached = case when (s0_date is not null) or (s1_date is not null) or (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                            or (s5_date is not null) or (cw_date is not null) then 'Stage 0: First Call' end,
+        s1_reached = case when (s1_date is not null) or (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                            or (s5_date is not null) or (cw_date is not null) then 'Stage 1: Initial Engagement' end,
+        s2_reached = case when (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                            or (s5_date is not null) or (cw_date is not null) then 'Stage 2: Discovery' end,
+        s3_reached = case when (s3_date is not null) or (s4_date is not null) 
+                            or (s5_date is not null) or (cw_date is not null) then 'Stage 3: Business & Solution Alignment' end,
+        s4_reached = case when (s4_date is not null) or (s5_date is not null) or (cw_date is not null) then 'Stage 4: Validation'  end,
+        s5_reached = case when (s5_date is not null) or (cw_date is not null) then 'Stage 5: Negotiation' end,
+        cw_reached = case when (cw_date is not null) then 'Closed Won' end,
+        cl_reached = case when (cl_date is not null) then 'Closed Lost' end,
+        dq_reached = case when (dq_date is not null) then 'Disqualified' end,
+        higheststage_reached = case when cw_date is not null then 'Closed Won'
+                                    when s5_date is not null then 'Stage 5: Negotiation'
+                                    when s4_date is not null then 'Stage 4: Validation'
+                                    when s3_date is not null then 'Stage 3: Business & Solution Alignment'
+                                    when s2_date is not null then 'Stage 2: Discovery'
+                                    when s1_date is not null then 'Stage 1: Initial Engagement'
+                                    when s0_date is not null then 'Stage 0: First Call'
+                                    else NULL END;
+                                    
+                                    
+// Create an "UNPIVOTED" table with UNION to use for analysis so that all stagenames are held in a single field
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES"
+as 
+(SELECT OPPORTUNITYID, S0_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S0_REACHED is not null
+UNION ALL
+SELECT OPPORTUNITYID, S1_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S1_REACHED is not null
+ UNION ALL
+SELECT OPPORTUNITYID, S2_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S2_REACHED is not null
+ UNION ALL
+SELECT OPPORTUNITYID, S3_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S3_REACHED is not null
+ UNION ALL
+SELECT OPPORTUNITYID, S4_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S4_REACHED is not null
+ UNION ALL 
+SELECT OPPORTUNITYID, S5_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S5_REACHED is not null
+);
+
+
+
+
