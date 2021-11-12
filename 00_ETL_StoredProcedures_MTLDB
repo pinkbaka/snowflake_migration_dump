@@ -1,0 +1,861 @@
+-- 00_ETL_SFDC_ImputeData
+-- 00_ETL_ImputeOppStages
+-- 00_ETL_TableauReportViews
+
+USE "PC_MATILLIONLOADER_DB";
+
+//"MTL_LOAD_TEST"
+------------------------------------------------------------------------
+------------------ 00_ETL_SFDC_ImputeData ------------------------------
+------------------------------------------------------------------------
+
+CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_CLONE()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+  
+    var sql_command = "CREATE OR REPLACE DATABASE MTL_LOAD_PRE CLONE PC_MATILLIONLOADER_DB";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+  return 'Done.';
+  $$;
+
+  CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_ADDFIELDS()
+    RETURNS VARCHAR
+    LANGUAGE javascript
+    AS
+    $$
+
+      // ADD FIELDS TO SFDC ACCOUNT OBJECT
+      var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD CURRENT_SEGMENT_HIERARCHY_SNW VARCHAR(100)";
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute();
+
+      var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD CURRENT_SEGMENT_ABBR VARCHAR(5)";
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute();
+
+      var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD NORTH_AMERICAN_STATE_PROVINCE__SNW VARCHAR(200)";
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD NORTH_AMERICAN_COUNTRY__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD TERRITORY_2021__SNW VARCHAR(100)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT ADD NA_HEATMAP_FLAG_SNW BOOLEAN";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    // ADD FIELDS TO SFDC OPPORTUNITY OBJECT
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_OWNERNAME__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_CREATEDBY_NAME__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_CREATIONNAME__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_CREATIONROLEID__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_CREATIONROLE__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_NAME__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_ROLEID__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_BESTRELATIONSHIP_ROLE__SNW VARCHAR(200)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD CREATECLOSED_SAMEQUARTER BOOLEAN";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD CREATECLOSEDWON_SAMEQUARTER BOOLEAN";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+//    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD OPP_SEGMENT_ABBR VARCHAR(5)";
+//    var statement = snowflake.createStatement( {sqlText: sql_command} );
+//    var result_set = statement.execute();
+//
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD CURRENT_ACCTSEGMENT__SNW VARCHAR(5)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = "ALTER TABLE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY ADD BEST_ACCTSEGMENT_AT_CLOSE__SNW VARCHAR(5)";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+  return 'Done.';
+  $$;
+
+
+
+//THIS ALSO UPDATES THE OPPTY
+CREATE or replace PROCEDURE usp_ETL_SFDCACCOUNT_UPDATEFIELDS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+      
+    // ADD FIELDS TO SFDC ACCOUNT OBJECT
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT 
+                        SET CURRENT_SEGMENT_HIERARCHY_SNW = CASE WHEN NUMBEROFEMPLOYEES >= 4501 THEN 'LARGE ENTERPRISE' 
+                            WHEN NUMBEROFEMPLOYEES >= 1001 THEN 'EMERGING ENTERPRISE' 
+                            WHEN NUMBEROFEMPLOYEES >= 251 THEN 'MIDDLE MARKET' 
+                            WHEN NUMBEROFEMPLOYEES >= 51 THEN 'EMERGING COMMERCIAL' 
+                            WHEN NUMBEROFEMPLOYEES <= 50 THEN 'VERY SMALL BUSINESS' 
+                            ELSE NULL 
+                        END`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+        // ADD FIELDS TO SFDC ACCOUNT OBJECT
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT 
+                        SET CURRENT_SEGMENT_ABBR = CASE WHEN NUMBEROFEMPLOYEES >= 4501 THEN 'LE' 
+                            WHEN NUMBEROFEMPLOYEES >= 1001 THEN 'EE' 
+                            WHEN NUMBEROFEMPLOYEES >= 251 THEN 'MM' 
+                            WHEN NUMBEROFEMPLOYEES >= 51 THEN 'EC' 
+                            WHEN NUMBEROFEMPLOYEES <= 50 THEN 'EC' 
+                            ELSE NULL 
+                        END`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    
+    // ADD FIELDS TO SFDC ACCOUNT OBJECT
+    // Fix mislabled states, assign correct abbreviations to NORTH_AMERICAN_STATE_PROVINCE__SNW
+    var sql_command = "UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT \
+                        SET NORTH_AMERICAN_STATE_PROVINCE__SNW = \
+                            case when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'NEW YORK' THEN 'NY' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'FL.' THEN 'FL' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'NEW JERSEY' THEN 'NJ' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'CALIFORNIA' THEN 'CA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'D.C.' THEN 'DC' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'TEXAS' THEN 'TX' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'FLORIDA' THEN 'FL' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'DISTRICT OF COLUMBIA' THEN 'DC' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'OREGON' THEN 'OR' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'VIRGINIA' THEN 'VA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'MARYLAND' THEN 'MD' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'COLORADO' THEN 'CO' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'DELAWARE' THEN 'DE' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'MASSACHUSETTS' THEN 'MA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'MA ,' THEN 'MA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'UTAH' THEN 'UT' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'NORTH CAROLINA' THEN 'NC' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'MISSOURI' THEN 'MO' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'GEORGIA' THEN 'GA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'WASHINGTON' THEN 'WA' \
+                              when UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) = 'MICHIGAN' THEN 'MI' \
+                              else UPPER(NORTH_AMERICAN_STATE_PROVINCE__C) END";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    // Fix mislabled countries, assign correct abbreviations to NORTH_AMERICAN_COUNTRY__SNW
+    var sql_command = "UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT \
+                        SET NORTH_AMERICAN_COUNTRY__SNW = case when UPPER(NORTH_AMERICAN_COUNTRY__C) in ('US','UNITED STATES', 'USA') THEN 'US' \
+                        when UPPER(NORTH_AMERICAN_COUNTRY__C) in ('CA','CANADA') THEN 'CA'\
+                        else UPPER(NORTH_AMERICAN_COUNTRY__C) end";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();  
+    
+    // Assign values to heatmap flag based on accounts in the US with correct abbreviations
+    var sql_command = "UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT \
+                        SET NA_HEATMAP_FLAG_SNW = \
+                        CASE WHEN NORTH_AMERICAN_COUNTRY__SNW = 'US' AND LEN(NORTH_AMERICAN_STATE_PROVINCE__SNW)= 2 THEN \
+                        TRUE ELSE FALSE END";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+  
+    // Assign sales territory/areas
+    var sql_command = "UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT \
+                        SET TERRITORY_2021__SNW = \
+                        CASE WHEN UPPER(NORTH_AMERICAN_STATE_PROVINCE__SNW) IN ('CA','OR','WA','NV','ID','UT','AZ','HI','AK') then 'West' \
+                        WHEN UPPER(NORTH_AMERICAN_STATE_PROVINCE__SNW) IN ('MT','WY','UT','CO','NM', \
+                                                                            'ND','SD','NE','KS','OK', \
+                                                                            'TX','MN','IA','MO','AR', \
+                                                                            'LA','WI','IL','MS','MI', \
+                                                                            'IN','KY','TN','AL','OH') then 'Central' \
+                        WHEN UPPER(NORTH_AMERICAN_STATE_PROVINCE__SNW) IN ('ME','NH','NY','MA','RI','CT','NJ','VT', \
+                                                                            'PA','DC','VA','KY', 'DE','WV', 'MD', \
+                                                                            'NC','SC','GA','FL') then 'East' \
+                        WHEN UPPER(NORTH_AMERICAN_COUNTRY__SNW) = 'CA' THEN 'CANADA' \
+                        ELSE 'Other' END";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+  return 'Done.';
+  $$;
+  
+//THIS ALSO UPDATES THE OPPTY
+CREATE or replace PROCEDURE usp_ETL_SFDCOPPORTUNITY_UPDATEFIELDS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+    // Stamp name on Opportunity Object for Owner
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                                SET t1.OPP_OWNERNAME__SNW = t2.NAME 
+                                FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                                WHERE t1.OWNERID = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    // Stamp name on Opportunity Object for Creator
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_CREATEDBY_NAME__SNW = t2.NAME 
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                        WHERE t1.CREATEDBYID = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    // Stamp name on Opportunity Object for Best relationship at creation
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_CREATIONNAME__SNW = t2.NAME 
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                        WHERE t1.Best_Relationship_Upon_Opp_Creation__C = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    // Stamp Role ID on Opportunity Object for Best relationship at creation
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_CREATIONROLEID__SNW = t2.USERROLEID 
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                        WHERE t1.Best_Relationship_Upon_Opp_Creation__C = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    // Stamp Role ID on Opportunity Object for Best relationship at creation
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_CREATIONROLE__SNW = t2.NAME
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USERROLE t2 
+                        WHERE t1.OPP_BESTRELATIONSHIP_CREATIONROLEID__SNW = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    //*************
+
+    // Stamp name on Opportunity Object for Best relationship
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_NAME__SNW = t2.NAME 
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                        WHERE t1.Best_Relationship__C = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    // Stamp Role ID on Opportunity Object for Best relationship
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_ROLEID__SNW = t2.USERROLEID 
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USER t2 
+                        WHERE t1.Best_Relationship__C = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    
+    // Stamp Role ID on Opportunity Object for Best relationship at creation
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.OPP_BESTRELATIONSHIP_ROLE__SNW = t2.NAME
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_USERROLE t2 
+                        WHERE t1.Best_Relationship__C = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    
+    //*************
+    // Stamp Create Close same quarter and or Win
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY 
+                                SET CREATECLOSED_SAMEQUARTER = CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE) AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE) 
+                                                                    THEN TRUE ELSE FALSE END,
+                                    CREATECLOSEDWON_SAMEQUARTER = CASE WHEN YEAR(CREATEDDATE) = YEAR(CLOSEDATE) AND QUARTER(CREATEDDATE) = QUARTER(CLOSEDATE) AND STAGENAME = 'Closed Won' 
+                                                                    THEN TRUE ELSE FALSE END`
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    // Stamp Current Acct segment on Opp
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.CURRENT_ACCTSEGMENT__SNW = t2.EMPLOYEE_BAND__C
+                        FROM MTL_LOAD_PRE.PUBLIC.TARGET_ACCOUNT t2 
+                        WHERE t1.ACCOUNTID = t2.ID`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    // Stamp Opp segment based on best employee count at close
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY t1 
+                        SET t1.BEST_ACCTSEGMENT_AT_CLOSE__SNW = CASE WHEN ESTIMATED_EMPLOYEES_AT_CLOSE__C >= 4501 THEN 'LE' 
+                            WHEN ESTIMATED_EMPLOYEES_AT_CLOSE__C >= 1001 THEN 'EE' 
+                            WHEN ESTIMATED_EMPLOYEES_AT_CLOSE__C >= 251 THEN 'MM' 
+                            WHEN ESTIMATED_EMPLOYEES_AT_CLOSE__C >= 51 THEN 'EC' 
+                            WHEN ESTIMATED_EMPLOYEES_AT_CLOSE__C <= 50 THEN 'EC' 
+                            ELSE NULL 
+                            END`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    
+    // Stamp NULL Opp segment based on current employee band
+    var sql_command = `UPDATE MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITY
+                        SET BEST_ACCTSEGMENT_AT_CLOSE__SNW = case when BEST_ACCTSEGMENT_AT_CLOSE__SNW is NULL then CURRENT_ACCTSEGMENT__SNW else BEST_ACCTSEGMENT_AT_CLOSE__SNW end`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+
+
+  return 'Done.';
+  $$;
+
+
+
+------------------------------------------------------------------------
+------------------ 00_ETL_ImputeOppStages ------------------------------
+------------------------------------------------------------------------
+
+----- IS IT POSSIBLE TO GET SAME NUMBER OF OPP HIST AND OPPS? SHOULD BE
+//  SELECT t1.ID FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+//  LEFT JOIN MTL_LOAD_PRE.PUBLIC.SNW_OPPORTUNITY_STAGES t2
+//  ON t1.ID = T2.OPPORTUNITYID
+//  WHERE T2.OPPORTUNITYID is null
+//  limit 10
+//  
+CREATE or replace PROCEDURE usp_ETL_OPPHISTORY_BUILDTABLE()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+      // Assign sales territory/areas
+    var sql_command = `CREATE OR REPLACE TABLE MTL_LOAD_PRE.PUBLIC.SNW_OPPORTUNITY_STAGES 
+    as 
+    SELECT OPPORTUNITYID, 
+    min("'Stage 0: First Call'") as s0_date, 
+    min("'Stage 1: Initial Engagement'") as s1_date, 
+    min("'Stage 2: Discovery'") as s2_date, 
+    min("'Stage 3: Business & Solution Alignment'") as s3_date, 
+    min("'Stage 4: Validation'") as s4_date, 
+    min("'Stage 5: Negotiation'") as s5_date, 
+    min("'Closed Won'") as cw_date, 
+    min("'Closed Lost'") as cl_date, 
+    min("'Disqualified'") as dq_date 
+    FROM 
+    ( 
+    SELECT * 
+    FROM MTL_LOAD_PRE.PUBLIC.TARGET_OPPORTUNITYHISTORY 
+    PIVOT(min(CREATEDDATE) for STAGENAME in ('Stage 0: First Call', 'Stage 1: Initial Engagement', 'Stage 2: Discovery', 
+    'Stage 3: Business & Solution Alignment', 'Stage 4: Validation', 'Stage 5: Negotiation', 
+    'Closed Won', 'Closed Lost', 'Disqualified')) 
+    as p 
+    ) t 
+    group by OPPORTUNITYID`;
+                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+  return 'Done.';
+  $$;
+  
+  CREATE or replace PROCEDURE usp_ETL_OPPHISTORY_ADDFIELDS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+      // Add Additional Fields for Analysis
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s0_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+      
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s1_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s2_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s3_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s4_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD s5_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD cw_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD cl_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD dq_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" ADD higheststage_reached varchar(100)`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    
+  return 'Done.';
+  $$;
+  
+  CREATE or replace PROCEDURE usp_ETL_OPPHISTORY_UPDATESTAGEREACHED()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+      // Update if a stage was reached on the OPP STAGES table
+    var sql_command = `
+    UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"
+        SET s0_reached = case when (s0_date is not null) or (s1_date is not null) or (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                                or (s5_date is not null) or (cw_date is not null) then 'Stage 0: First Call' end,
+            s1_reached = case when (s1_date is not null) or (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                                or (s5_date is not null) or (cw_date is not null) then 'Stage 1: Initial Engagement' end,
+            s2_reached = case when (s2_date is not null) or (s3_date is not null) or (s4_date is not null) 
+                                or (s5_date is not null) or (cw_date is not null) then 'Stage 2: Discovery' end,
+            s3_reached = case when (s3_date is not null) or (s4_date is not null) 
+                                or (s5_date is not null) or (cw_date is not null) then 'Stage 3: Business & Solution Alignment' end,
+            s4_reached = case when (s4_date is not null) or (s5_date is not null) or (cw_date is not null) then 'Stage 4: Validation'  end,
+            s5_reached = case when (s5_date is not null) or (cw_date is not null) then 'Stage 5: Negotiation' end,
+            cw_reached = case when (cw_date is not null) then 'Closed Won' end,
+            cl_reached = case when (cl_date is not null) then 'Closed Lost' end,
+            dq_reached = case when (dq_date is not null) then 'Disqualified' end,
+
+            higheststage_reached = case when cw_date is not null then 'Closed Won'
+                                        when s5_date is not null then 'Stage 5: Negotiation'
+                                        when s4_date is not null then 'Stage 4: Validation'
+                                        when s3_date is not null then 'Stage 3: Business & Solution Alignment'
+                                        when s2_date is not null then 'Stage 2: Discovery'
+                                        when s1_date is not null then 'Stage 1: Initial Engagement'
+                                        when s0_date is not null then 'Stage 0: First Call'
+                                        else NULL END`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+  return 'Done.';
+  $$;
+  
+  CREATE or replace PROCEDURE  usp_ETL_IMPUTEDOPPHIST_BUILDTABLE()
+    RETURNS VARCHAR
+    LANGUAGE javascript
+    AS
+    $$
+        //Create table for IMPUTED OPP HISTORY
+      var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES"
+                          as 
+                          (SELECT OPPORTUNITYID, S0_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S0_REACHED is not null
+                          UNION ALL
+                          SELECT OPPORTUNITYID, S1_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S1_REACHED is not null
+                           UNION ALL
+                          SELECT OPPORTUNITYID, S2_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S2_REACHED is not null
+                           UNION ALL
+                          SELECT OPPORTUNITYID, S3_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S3_REACHED is not null
+                           UNION ALL
+                          SELECT OPPORTUNITYID, S4_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S4_REACHED is not null
+                           UNION ALL 
+                          SELECT OPPORTUNITYID, S5_REACHED as STAGENAME FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" WHERE S5_REACHED is not null
+                          )`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+
+    return 'Done.';
+    $$;
+//
+//CREATE OR REPLACE PROCEDURE MYPROC()
+//  RETURNS VARCHAR
+//  LANGUAGE JAVASCRIPT
+//  EXECUTE AS CALLER
+//AS $$
+//    snowflake.execute({"sqlText": "SET MY_VAR = 7"});
+//    var stmt = snowflake.createStatement({"sqlText": "select * from test"});
+//    var rs = stmt.execute();
+//    rs.next(); // .next().getColumnValue(1);
+//
+//    return rs.getColumnValue(1);
+//$$
+//;
+
+  CREATE or replace PROCEDURE  usp_ETL_PRODUCT_ROUTEDRECORDS()
+    RETURNS VARCHAR
+    LANGUAGE javascript
+    EXECUTE AS CALLER
+    AS
+    $$
+    
+      //var lastSunday = new Date(today.setDate(today.getDate()-today.getDay())).toString();
+      //Create and set variable for report cutoff date
+      var sql_command = `set rpt_enddate = (select previous_day( current_date(), 'Saturday'))`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+      
+      // adjust the week start date to sunday for the purpose of this query
+      var sql_command = `ALTER SESSION SET WEEK_START = 7`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+
+      var sql_command = `CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp" AS
+                          (
+                            SELECT ACCOUNT_TYPE__C,
+                                    ACCOUNT_ID_15_TO_18__C, 
+                                    ACCOUNT_NAME__C, 
+                                    EMPLOYEE_BAND__C,
+                                    DATE__C, 
+                                    DATE_TRUNC( 'WEEK', DATE__C ) imp_WeekStart,
+                                    DATEADD(day, 5, DATE_TRUNC( 'WEEK', DATE__C )) RPT_AGG_Date,
+                                    ACTIVE__C, sandbox__C,ACCOUNT__C,
+                                    LEAD_ROUTED_RECORDS__C,
+                                    CONTACT_ROUTED_RECORDS__C,
+                                    ACCOUNT_ROUTED_RECORDS__C,
+                                    OPPORTUNITY_ROUTED_RECORDS__C,
+                                    CASE_ROUTED_RECORDS__C
+                            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CUSTOMER_ORGANIZATION__C" t1
+                            LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_CUSTOMER_USAGE_METRICS__C" t2
+                                on t1.ID = t2.CUSTOMER_ORGANIZATION__C
+                            LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t3
+                                on t1.ACCOUNT__C = t3.ID
+                            WHERE
+                              DATE__C >= '1/3/2021'  and DATE__C <= $rpt_enddate --'5/1/2021'         --Date Range for Activity
+                              AND CONTAINS(t1.ACCOUNT_TYPE__C , 'Customer' )            --Currently a Customer
+                              AND NOT CONTAINS(t1.ACCOUNT_TYPE__C , 'Former Customer' ) --Not a former Customer
+                              and SANDBOX__C = FALSE                                    --Not a sandbox environment
+                              AND UPPER(t1.NAME) not like '%OVERLORD%%'                 --exclude test names and orgs
+                              AND UPPER(t1.NAME) not like '%DEV%'                       --""
+                              AND UPPER(t1.NAME) not like '%LEANDATA%%'                 --""
+                              AND UPPER(t1.NAME) not like '%QA%%'                       --""
+                              AND UPPER(t1.NAME) not like '%TEST%%'                     --""
+                              AND t1.ACTIVE__C = TRUE                                   --org is active
+                              AND IS_BLIND__C = FALSE                                   --org is not blind
+                          )`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+
+      var sql_command = `
+        CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_RPT_ROUTED_RECORDS" AS
+          (
+        SELECT  DATE__C,imp_WeekStart, RPT_AGG_Date, ACCOUNT_ID_15_TO_18__C, ACCOUNT_NAME__C, EMPLOYEE_BAND__C,  
+                'Lead' as Object, LEAD_ROUTED_RECORDS__C as routed_record
+        FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp"
+        UNION 
+        SELECT  DATE__C,imp_WeekStart, RPT_AGG_Date, ACCOUNT_ID_15_TO_18__C, ACCOUNT_NAME__C, EMPLOYEE_BAND__C,  
+                'Contact' as Object, CONTACT_ROUTED_RECORDS__C as routed_record
+        FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp"
+        UNION
+        SELECT  DATE__C,imp_WeekStart, RPT_AGG_Date, ACCOUNT_ID_15_TO_18__C, ACCOUNT_NAME__C, EMPLOYEE_BAND__C,  
+                'Account' as Object, ACCOUNT_ROUTED_RECORDS__C as routed_record
+        FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp"
+        UNION
+        SELECT  DATE__C,imp_WeekStart, RPT_AGG_Date, ACCOUNT_ID_15_TO_18__C, ACCOUNT_NAME__C, EMPLOYEE_BAND__C,  
+                'Opportunity' as Object, OPPORTUNITY_ROUTED_RECORDS__C as routed_record
+        FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp"
+        UNION
+        SELECT  DATE__C,imp_WeekStart, RPT_AGG_Date, ACCOUNT_ID_15_TO_18__C, ACCOUNT_NAME__C, EMPLOYEE_BAND__C,  
+                'Case' as Object, CASE_ROUTED_RECORDS__C as routed_record
+        FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_RPT_RoutedRecords_tmp"
+        )`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+            
+    return 'Done.';
+    $$;
+
+            
+            
+------------------------------------------------------------------------
+------------------ 00_ETL_TableauReportViews ---------------------------
+------------------------------------------------------------------------
+// CREATE VIEWS REFERENCING PRE IN TABLEAU REPORTING DB
+CREATE or replace PROCEDURE  usp_ETL_TABLEAURPT_CREATEVIEWS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SBQQ_QUOTELINE" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SBQQ_QUOTE" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTE__C";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_OPPORTUNITY" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_OPPORTUNITYHISTORY" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_USER" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_USERROLE" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USERROLE";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_ACCOUNT" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_CONTACT" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_LEAD" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_LEAD";`;
+                        
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_CAMPAIGN" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_CAMPAIGNMEMBER" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_TASK" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_TASK";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_OPPORTUNITY_STAGES" AS
+                      SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C" AS
+                    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+    
+    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."TARGET_LEANDATA__TIME_TO_ACTION_TRACKER__C" AS
+                    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_LEANDATA__TIME_TO_ACTION_TRACKER__C";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    
+    
+//    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_QUOTA" AS
+//                    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_QUOTA_MASTER"`;
+//    var statement = snowflake.createStatement( {sqlText: sql_command} );
+//    var result_set = statement.execute(); 
+    
+//    var sql_command = `CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_ATTAINMENT" AS
+//                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_MASTER";`;
+//    var statement = snowflake.createStatement( {sqlText: sql_command} );
+//    var result_set = statement.execute(); 
+
+    var sql_command = `CREATE OR REPLACE VIEW SNW_SEGMENT_FQBR AS
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SNOWFLAKE_AE_FQBR_DATA";`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+
+   
+    
+  return 'Done.';
+  $$;
+  
+            
+
+------------------------------------------------------------------------
+------------------ 00_ETL_Enable_User_Access ---------------------------
+------------------------------------------------------------------------
+CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_ENABLE_USERS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  EXECUTE AS OWNER
+  AS
+  $$
+  
+//    var sql_command = `use role SECURITYADMIN`;
+//    var statement = snowflake.createStatement( {sqlText: sql_command} );
+//    var result_set = statement.execute();
+   
+    var sql_command = `grant usage on database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on all schemas in database MTL_LOAD_PRE  to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on all tables in database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+   
+        
+    var sql_command = `grant all privileges on future schemas in database MTL_LOAD_PRE  to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on future tables in database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+  return 'Done.';
+  $$;            
+            
+            
+------------------------------------------------------------------------
+------------------ CALL ALL STORED PROCS -------------------------------
+------------------------------------------------------------------------
+
+CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_CALLALLUSP()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+  
+    var sql_command = "CALL usp_ETL_MTLLOADPRE_CLONE()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_MTLLOADPRE_ADDFIELDS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_SFDCACCOUNT_UPDATEFIELDS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+  
+    var sql_command = "CALL usp_ETL_SFDCOPPORTUNITY_UPDATEFIELDS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_OPPHISTORY_BUILDTABLE()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_OPPHISTORY_ADDFIELDS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+  
+    var sql_command = "CALL usp_ETL_OPPHISTORY_UPDATESTAGEREACHED()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_IMPUTEDOPPHIST_BUILDTABLE()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_TABLEAURPT_CREATEVIEWS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = "CALL usp_ETL_MTLLOADPRE_ENABLE_USERS()";
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `CALL usp_RUN_ALL_OPPHEALTH()`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+ 
+  return 'Done.';
+  $$;       
+
+  
+
+            
+USE "PC_MATILLIONLOADER_DB";
+            
+alter warehouse REV_OPS_ETL_WH set warehouse_size=SMALL;
+CALL usp_ETL_MTLLOADPRE_CALLALLUSP();
+alter warehouse REV_OPS_ETL_WH set warehouse_size=XSMALL;
+
+CALL usp_ETL_MTLLOADPRE_CLONE();  
+CALL usp_ETL_MTLLOADPRE_ADDFIELDS();
+CALL usp_ETL_SFDCACCOUNT_UPDATEFIELDS();
+CALL usp_ETL_SFDCOPPORTUNITY_UPDATEFIELDS();  
+  
+CALL usp_ETL_OPPHISTORY_BUILDTABLE();
+CALL usp_ETL_OPPHISTORY_ADDFIELDS();
+CALL usp_ETL_OPPHISTORY_UPDATESTAGEREACHED();
+CALL usp_ETL_IMPUTEDOPPHIST_BUILDTABLE();  
+  
+CALL  usp_ETL_TABLEAURPT_CREATEVIEWS();
+
+CALL usp_ETL_PRODUCT_ROUTEDRECORDS();            
+            
+SHOW PROCEDURES;
+
+USE "PC_MATILLIONLOADER_DB";
+SHOW TASKS;
+TASK_HISTORY();
+
+select *
+  from table(information_schema.task_history())
+  order by scheduled_time desc;
+  
+  
+SELECT CREATECLOSED_SAMEQUARTER, CREATECLOSEDWON_SAMEQUARTER, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"  
+limit 100;
+  
+  
+  
+SELECT CURRENT_ACCTSEGMENT__SNW, BEST_ACCTSEGMENT_AT_CLOSE__SNW,ESTIMATED_EMPLOYEES_AT_CLOSE__C FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+group by 1,2,3;
+  
+  
+  
+SELECT OPP_SEGMENT_ABBR FROM ;
+            
+            SELECT LDAN__ENGAGEMENT_TYPE__C, year(LDAN__ENGAGEMENT_DATE__C), month(LDAN__ENGAGEMENT_DATE__C) 
+            FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C"
+            group by 1,2,3
+            order by 1,2,3 ;
+            
+            
+            SELECT *
+            FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C"
+            where date(MATILLION_UPDATED_TIMESTAMP) = '6/1/2021';
+            group by 1
+            order by 1;
+  
