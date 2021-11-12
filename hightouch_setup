@@ -1,0 +1,85 @@
+-- Create a role for the census user
+CREATE OR REPLACE ROLE HIGHTOUCH_ROLE;
+-- Ensure the sysadmin role inherits any privileges the census role is granted. Note that this does not grant sysadmin privileges to the census role
+GRANT ROLE HIGHTOUCH_ROLE TO ROLE SYSADMIN;
+-- Create a warehouse for the census user, optimizing for cost over performance
+CREATE OR REPLACE WAREHOUSE HIGHTOUCH_WAREHOUSE WITH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = FALSE;
+-- Allow the census user to run queries in the warehouse
+GRANT USAGE ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Allow the census user to start and stop the warehouse and abort running queries in the warehouse
+GRANT OPERATE ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Allow the census user to see historical query statistics on queries in its warehouse
+GRANT MONITOR ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Create the census user
+-- Do not set DEFAULT_WORKSPACE, this will impact which tables are visible to Census
+CREATE OR REPLACE USER HIGHTOUCH WITH DEFAULT_ROLE = HIGHTOUCH_ROLE DEFAULT_WAREHOUSE = HIGHTOUCH_WAREHOUSE PASSWORD = 'CS!23Qwe';
+-- Grant the census role to the census user
+GRANT ROLE HIGHTOUCH_ROLE TO USER HIGHTOUCH;
+-- Create a private bookkeeping database where Census can store sync state
+CREATE OR REPLACE DATABASE "HIGHTOUCH";
+-- Give the census user full access to the bookkeeping database
+GRANT ALL PRIVILEGES ON DATABASE "HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Create a private bookkeeping schema where Census can store sync state
+CREATE OR REPLACE SCHEMA "HIGHTOUCH"."HIGHTOUCH";
+-- Give the census user full access to the bookkeeping schema
+GRANT ALL PRIVILEGES ON SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE; -- Create a role for the census user
+CREATE OR REPLACE ROLE HIGHTOUCH_ROLE;
+-- Ensure the sysadmin role inherits any privileges the census role is granted. Note that this does not grant sysadmin privileges to the census role
+GRANT ROLE HIGHTOUCH_ROLE TO ROLE SYSADMIN;
+-- Create a warehouse for the census user, optimizing for cost over performance
+CREATE OR REPLACE WAREHOUSE HIGHTOUCH_WAREHOUSE WITH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = FALSE;
+-- Allow the census user to run queries in the warehouse
+GRANT USAGE ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Allow the census user to start and stop the warehouse and abort running queries in the warehouse
+GRANT OPERATE ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Allow the census user to see historical query statistics on queries in its warehouse
+GRANT MONITOR ON WAREHOUSE HIGHTOUCH_WAREHOUSE TO ROLE HIGHTOUCH_ROLE;
+-- Create the census user
+-- Do not set DEFAULT_WORKSPACE, this will impact which tables are visible to Census
+CREATE OR REPLACE USER HIGHTOUCH WITH DEFAULT_ROLE = HIGHTOUCH_ROLE DEFAULT_WAREHOUSE = HIGHTOUCH_WAREHOUSE PASSWORD = 'CS!23Qwe';
+-- Grant the census role to the census user
+GRANT ROLE HIGHTOUCH_ROLE TO USER HIGHTOUCH;
+-- Create a private bookkeeping database where Census can store sync state
+CREATE OR REPLACE DATABASE "HIGHTOUCH";
+-- Give the census user full access to the bookkeeping database
+GRANT ALL PRIVILEGES ON DATABASE "HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Create a private bookkeeping schema where Census can store sync state
+CREATE OR REPLACE SCHEMA "HIGHTOUCH"."HIGHTOUCH";
+-- Give the census user full access to the bookkeeping schema
+GRANT ALL PRIVILEGES ON SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Give the census user the ability to create stages for unloading data
+GRANT CREATE STAGE ON SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user see this database
+GRANT USAGE ON DATABASE "HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user see this schema
+GRANT USAGE ON SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read all existing tables in this schema
+GRANT SELECT ON ALL TABLES IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read any new tables added to this schema
+GRANT SELECT ON FUTURE TABLES IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read all existing views in this schema
+GRANT SELECT ON ALL VIEWS IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read any new views added to this schema
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user execute any existing functions in this schema
+GRANT USAGE ON ALL FUNCTIONS IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user execute any new functions added to this schema
+GRANT USAGE ON FUTURE FUNCTIONS IN SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Give the census user the ability to create stages for unloading data
+GRANT CREATE STAGE ON SCHEMA "HIGHTOUCH"."HIGHTOUCH" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user see this database
+GRANT USAGE ON DATABASE "MTL_LOAD_PRE" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user see this schema
+GRANT USAGE ON SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read all existing tables in this schema
+GRANT SELECT ON ALL TABLES IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read any new tables added to this schema
+GRANT SELECT ON FUTURE TABLES IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read all existing views in this schema
+GRANT SELECT ON ALL VIEWS IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user read any new views added to this schema
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user execute any existing functions in this schema
+GRANT USAGE ON ALL FUNCTIONS IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
+-- Let the census user execute any new functions added to this schema
+GRANT USAGE ON FUTURE FUNCTIONS IN SCHEMA "MTL_LOAD_PRE"."PUBLIC" TO ROLE HIGHTOUCH_ROLE;
