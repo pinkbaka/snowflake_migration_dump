@@ -1,0 +1,88 @@
+
+set begindate = '1/1/2020';
+set enddate = '9/30/2021';    
+
+SELECT year(RETENTION_ARR_DATE__C), quarter(RETENTION_ARR_DATE__C), stagename, count(*) 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+
+WHERE   RETENTION_ARR_DATE__C >= $begindate and RETENTION_ARR_DATE__C <= $enddate
+    AND isclosed = TRUE
+    AND TYPE in ('Upsell', 'Renewal')
+group by 1,2,3
+order by 3,1,2;
+
+
+
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS_CX"
+as (
+    
+    
+    SELECT 
+    S0_REACHED,
+    S1_REACHED,
+    S2_REACHED,
+    S3_REACHED,
+    S4_REACHED,
+    S5_REACHED,
+    CW_REACHED,
+    CL_REACHED,
+    DQ_REACHED  
+    ,t1.*, 
+    MONTH(t1.RETENTION_ARR_DATE__C) as CLOSE_MONTH,
+    QUARTER(t1.RETENTION_ARR_DATE__C) as CLOSE_QUARTER,
+    YEAR(t1.RETENTION_ARR_DATE__C) as CLOSE_YEAR,
+    CURRENT_SEGMENT_HIERARCHY_SNW,
+    NORTH_AMERICAN_STATE_PROVINCE__SNW,
+    NORTH_AMERICAN_COUNTRY__SNW,
+    TERRITORY_2021__SNW
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"t2
+    on t1.ID = t2.OPPORTUNITYID
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t3
+    on t1.ACCOUNTID = t3.ID
+    and RETENTION_ARR_DATE__C >= $begindate and RETENTION_ARR_DATE__C <= $enddate
+    AND isclosed = TRUE
+    AND t1.TYPE in ('Upsell', 'Renewal')
+    --AND t1.Type = 'New Business'
+ );
+ SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS_CX";
+ //SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+ 
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_CWRATE_OPPS_CX_BASE" AS
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS_CX";
+ 
+ 
+ 
+ //SELECT stagename, * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CW_Opps_v1" WHERE OPP_OWNERNAME__SNW = 'Anna Ayrapetyan'
+ // number of opps that reach each stage
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_CX_v2"
+as (
+ SELECT ID, NAME, TYPE, BEST_ACCTSEGMENT_AT_CLOSE__SNW, CURRENT_SEGMENT_HIERARCHY_SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID, OPP_OWNERNAME__SNW,
+    CLOSE_YEAR, CLOSE_QUARTER, CLOSE_MONTH,
+     count_if(S0_REACHED is not null) as OppsReachS0,
+     count_if(S1_REACHED is not null) as OppsReachS1,
+     count_if(S2_REACHED is not null) as OppsReachS2,
+     count_if(S3_REACHED is not null) as OppsReachS3,
+     count_if(S4_REACHED is not null) as OppsReachS4,
+     count_if(S5_REACHED is not null) as OppsReachS5,
+     count_if(CW_REACHED is not null) as OppsReachCW,
+     count_if(CL_REACHED is not null) as OppsReachCL,
+     count_if(DQ_REACHED is not null) as OppsReachDQ,
+     count(*) as TotalOpps
+ FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS_CX"
+ group by 1,2,3,4,5,6,7,8,9, 10, 11
+ order by 1,2, 3,4,5, 6, 7, 8
+ );
+ SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_CX_v2";
+//
+// 
+//CREATE OR REPLACE VIEW SNW_REP_CW_RATE AS
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER";
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP_CX" AS
+  select * from "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_CX_v2"
+    unpivot(OPPS_IN_STAGE for STAGE in (OppsReachS0, OppsReachS1, OppsReachS2, OppsReachS3, OppsReachS4, OppsReachS5));
+SELECT * FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP_CX";
