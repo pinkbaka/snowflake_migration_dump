@@ -1,0 +1,412 @@
+
+//set CY = '2021'
+//set CY_begindate = '1/1/2021';
+//set CY_enddate = '12/31/2021';
+//
+
+set YTD_cutoffdate = to_date('2021-06-30');
+-- CREATE AE LIST With Quota
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_LIST"
+as (
+      SELECT t1.ID, t1.NAME, SF_ID, MANAGERID, ANNUAL_QUOTA, Q1 as Q1_Quota, Q2 as Q2_Quota, Q3 as Q3_Quota, Q4 as Q4_Quota, YEAR, ACTIVE, ROLE
+      FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_AE_QUOTAMAPPING" t1
+      LEFT JOIN "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_USER" t2
+            on t1.SF_ID = t2.ID
+        ORDER BY ID ASC
+    );
+    
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_LIST" ADD MANAGER_NAME VARCHAR;
+
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_LIST" t1
+SET t1.MANAGER_NAME = t2.NAME
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_USER" t2
+WHERE  t1.MANAGERID = t2.ID;
+
+
+
+--CREATE BASE TABLE FOR CALC'S ON AE SALESCREDIT
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_BASE"
+as (
+SELECT ID,OWNERID, OPP_OWNERNAME__SNW,OPPORTUNITY_OWNER_ROLE__C, STAGENAME, SALES_CREDIT_ARR__C, TYPE,CLOSEDATE, ISCLOSED
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE CLOSEDATE BETWEEN '1/1/2021' and '12/31/2021'
+AND TYPE in ('New Business', 'Upsell', 'Renewal')
+AND (OPPORTUNITY_OWNER_ROLE__C like '%AE -%' or OPPORTUNITY_OWNER_ROLE__C like '%AM -%')
+    );
+    
+    
+
+  
+
+-- Attainment Calc Queries  
+  
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_REPS"
+as (
+SELECT OPP_OWNERNAME__SNW as REP, OWNERID,OPPORTUNITY_OWNER_ROLE__C,
+
+        SUM(case when quarter(CLOSEDATE) = 1 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q1_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 2 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q2_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 3 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q3_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 4 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q4_Attainment,
+    SUM(case when quarter(CLOSEDATE) <= quarter(CURRENT_DATE) and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as YTD_Attainment
+    
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_BASE"
+GROUP BY  1,2,3
+    );
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED"
+as (
+SELECT  OPPORTUNITY_OWNER_ROLE__C,
+    case when OPPORTUNITY_OWNER_ROLE__C = 'AE - Large Enterprise Sales' then 'ABC2'
+         when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Enterprise Sales' then 'ABC3'
+         when OPPORTUNITY_OWNER_ROLE__C = 'AE - Mid Market Sales' then '0055A00000BFWmgQAH'
+         when OPPORTUNITY_OWNER_ROLE__C = 'AM - Commercial Sales' then 'ABC1'   
+         when OPPORTUNITY_OWNER_ROLE__C = 'AE - Emerging Commercial Sales' then '005i0000006idbdAAA'
+    end as OWNERID,
+        SUM(case when quarter(CLOSEDATE) = 1 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q1_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 2 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q2_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 3 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q3_Attainment,
+    SUM(case when quarter(CLOSEDATE) = 4 and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as Q4_Attainment,
+    SUM(case when quarter(CLOSEDATE) <= quarter(CURRENT_DATE) and STAGENAME = 'Closed Won' then SALES_CREDIT_ARR__C else 0 end) as YTD_Attainment
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_BASE"
+GROUP BY  1,2
+    );
+
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" ADD REP VARCHAR;
+ALTER TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" ADD ROLE VARCHAR;
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS"
+as (
+SELECT NAME as REP, SF_ID AS OWNERID, t1.ROLE as OPPORTUNITY_OWNER_ROLE__C, 
+SUM(Q1_ATTAINMENT) as Q1_ATTAINMENT,
+SUM(Q2_ATTAINMENT) as Q2_ATTAINMENT,
+SUM(Q3_ATTAINMENT) as Q3_ATTAINMENT,
+SUM(Q4_ATTAINMENT) as Q4_ATTAINMENT,
+SUM(YTD_ATTAINMENT)  as YTD_ATTAINMENT
+// 0 as Q1_ATTAINMENT, 0 as  Q2_ATTAINMENT, 0 as  Q3_ATTAINMENT, 0 as Q4_ATTAINMENT,
+// 0 as YTD_ATTAINMENT 
+ FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_LIST" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" t2
+on t1.SF_ID = T2.OWNERID
+WHERE t1.ROLE NOT like 'AE' and t1.ROLE NOT LIKE 'AM'
+GROUP BY 1,2,3
+);
+
+-- Update Jean Numbers
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS"
+SET Q1_ATTAINMENT = (SELECT SUM(Q1_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q2_ATTAINMENT = (SELECT SUM(Q2_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q3_ATTAINMENT = (SELECT SUM(Q3_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q4_ATTAINMENT = (SELECT SUM(Q4_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    YTD_ATTAINMENT = (SELECT SUM(YTD_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales'))
+WHERE OWNERID = '0055A00000BFiuNQAT';
+
+-- Update Mike Numbers. NOT Jean is Mike
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS"
+SET Q1_ATTAINMENT = (SELECT SUM(Q1_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C NOT IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q2_ATTAINMENT = (SELECT SUM(Q2_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C NOT IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q3_ATTAINMENT = (SELECT SUM(Q3_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C NOT IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    Q4_ATTAINMENT = (SELECT SUM(Q4_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C NOT IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales')),
+    YTD_ATTAINMENT = (SELECT SUM(YTD_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED" WHERE OPPORTUNITY_OWNER_ROLE__C NOT IN ('AE - Large Enterprise Sales', 'AE - Emerging Enterprise Sales'))
+WHERE OWNERID = '0055A000009FzLWQA0';
+
+--Update Steve Numbers
+UPDATE "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS"
+SET Q1_ATTAINMENT = (SELECT SUM(Q1_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED"),
+    Q2_ATTAINMENT = (SELECT SUM(Q2_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED"),
+    Q3_ATTAINMENT = (SELECT SUM(Q3_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED"),
+    Q4_ATTAINMENT = (SELECT SUM(Q4_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED"),
+    YTD_ATTAINMENT = (SELECT SUM(YTD_ATTAINMENT) FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_GROUPED")
+    --,OWNERID = '0055A00000Alt51QAB'
+WHERE OWNERID = '0055A00000Alt51QAB';
+
+
+
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_GROUPED"
+as (
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_REPS"
+UNION
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_SEGMENT_ATTAINMENT_MANAGERS"
+    );
+    
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_GROUPED";
+
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_MASTER"
+as (
+SELECT 
+      case when quarter($YTD_cutoffdate) = 1 then Q1_ATTAINMENT
+           when quarter($YTD_cutoffdate) = 2 then Q2_ATTAINMENT
+           when quarter($YTD_cutoffdate) = 3 then Q3_ATTAINMENT
+           when quarter($YTD_cutoffdate) = 4 then Q4_ATTAINMENT end as "CQ_ATTAINMENT",
+      case when quarter($YTD_cutoffdate) = 1 then Q1_Quota
+           when quarter($YTD_cutoffdate) = 2 then Q2_Quota
+           when quarter($YTD_cutoffdate) = 3 then Q3_Quota
+           when quarter($YTD_cutoffdate) = 4 then Q4_Quota end as "CQ_QUOTA",
+      case when quarter($YTD_cutoffdate) = 1 then div0(Q1_ATTAINMENT,Q1_Quota)
+           when quarter($YTD_cutoffdate) = 2 then div0(Q2_ATTAINMENT,Q2_Quota)
+           when quarter($YTD_cutoffdate) = 3 then div0(Q3_ATTAINMENT,Q3_Quota)
+           when quarter($YTD_cutoffdate) = 4 then div0(Q4_ATTAINMENT,Q4_Quota) end as "CQ_ATTAINMENT%",
+                 
+           
+      div0(Q1_ATTAINMENT,Q1_Quota) as "Q1_ATTAINMENT%",
+      div0(Q2_ATTAINMENT,Q2_Quota) as "Q2_ATTAINMENT%",
+      div0(Q3_ATTAINMENT,Q3_Quota) as "Q3_ATTAINMENT%",
+      div0(Q4_ATTAINMENT,Q4_Quota) as "Q4_ATTAINMENT%",
+  case when quarter($YTD_cutoffdate) = 1 then Q1_Quota
+      when quarter($YTD_cutoffdate) = 2 then Q1_Quota+Q2_Quota
+      when quarter($YTD_cutoffdate) = 3 then Q1_Quota+Q2_Quota+Q3_Quota
+      when quarter($YTD_cutoffdate) = 4 then Q1_Quota+Q2_Quota+Q3_Quota+Q4_Quota end as YTD_QUOTA ,
+  
+  
+//  (YTD_Attainment/
+//case when quarter(CURRENT_DATE) = 1 then Q1_Quota
+//      when quarter(CURRENT_DATE) = 2 then Q1_Quota+Q2_Quota
+//      when quarter(CURRENT_DATE) = 3 then Q1_Quota+Q2_Quota+Q3_Quota
+//      when quarter(CURRENT_DATE) = 4 then Q1_Quota+Q2_Quota+Q3_Quota+Q4_Quota end) as "YTD_ATTAINMENT%",
+//(YTD_Attainment/ (Q1_Quota+Q2_Quota+Q3_Quota+Q4_Quota )) as "ANNUAL_ATTAINMENT%"
+div0(YTD_Attainment,
+case when quarter($YTD_cutoffdate) = 1 then Q1_Quota
+      when quarter($YTD_cutoffdate) = 2 then Q1_Quota+Q2_Quota
+      when quarter($YTD_cutoffdate) = 3 then Q1_Quota+Q2_Quota+Q3_Quota
+      when quarter($YTD_cutoffdate) = 4 then Q1_Quota+Q2_Quota+Q3_Quota+Q4_Quota end) as "YTD_ATTAINMENT%",
+div0(YTD_Attainment, (Q1_Quota+Q2_Quota+Q3_Quota+Q4_Quota )) as "ANNUAL_ATTAINMENT%"
+,*
+FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_LIST" t1
+full outer join "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_GROUPED" t2
+on t1.SF_ID = t2.OWNERID
+    );
+    
+    
+//CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_QUOTA" AS
+//                    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_QUOTA_MASTER";
+
+   -- drop table "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_ATTAINMENT";
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_ATTAINMENT" AS
+(
+                        SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_MASTER"
+  );
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_MASTER"
+
+
+
+set pipelinefactor = 4;
+set selfgen_pipelinefactor = 0.2;
+
+--- Pipeline stuff
+--- Considered adding self gen pipeline
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_GOALS"
+as (
+
+  
+   SELECT NAME,SF_ID,
+ Q1_QUOTA * $pipelinefactor as Q1_PipelineGoal, 
+ Q2_QUOTA * $pipelinefactor as Q2_PipelineGoal,
+ Q3_QUOTA * $pipelinefactor as Q3_PipelineGoal,
+ Q4_QUOTA * $pipelinefactor as Q4_PipelineGoal,
+ ANNUAL_QUOTA * $pipelinefactor as Annual_PipelineGoal,
+ Q1_QUOTA * $selfgen_pipelinefactor as Q1_PipelineSelfGenGoal, 
+ Q2_QUOTA * $selfgen_pipelinefactor as Q2_PipelineSelfGenGoal,
+ Q3_QUOTA * $selfgen_pipelinefactor as Q3_PipelineSelfGenGoal,
+ Q4_QUOTA * $selfgen_pipelinefactor as Q4_PipelineSelfGenGoal,
+ ANNUAL_QUOTA * $selfgen_pipelinefactor  as Annual_PipelineSelfGenGoal
+
+ FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_MASTER"
+
+    );
+    
+    
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_GOALS";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_OWNED"
+as (
+select  OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID,
+    sum(case    when (SALES_CREDIT_ARR__C is NOT null AND CLOSEDATE > DATE_TRUNC('YEAR',DATEADD(YEAR,  0, GETDATE())))
+                then SALES_CREDIT_ARR__C else 0 end) as SALES_CREDIT_ARR__C_Q1,
+    sum(case    when (SALES_CREDIT_ARR__C is NOT null AND CLOSEDATE > DATEADD('QUARTER',+1,DATE_TRUNC('YEAR',DATEADD(YEAR,  0, GETDATE()))))
+                then SALES_CREDIT_ARR__C else 0 end) as SALES_CREDIT_ARR__C_Q2,
+        sum(case    when (SALES_CREDIT_ARR__C is NOT null AND CLOSEDATE > DATEADD('QUARTER',+2,DATE_TRUNC('YEAR',DATEADD(YEAR,  0, GETDATE()))))
+                then SALES_CREDIT_ARR__C else 0 end) as SALES_CREDIT_ARR__C_Q3,
+        sum(case    when (SALES_CREDIT_ARR__C is NOT null AND CLOSEDATE > DATEADD('QUARTER',+3,DATE_TRUNC('YEAR',DATEADD(YEAR,  0, GETDATE()))))
+                then SALES_CREDIT_ARR__C else 0 end) as SALES_CREDIT_ARR__C_Q4,
+    count(*) as Total_Opps
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= '1/1/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+    group by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID
+    order by 2 ,1  ASC
+
+    );
+    
+    
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_OWNED";
+
+
+SELECT 
+
+DIV0(SALES_CREDIT_ARR__C_Q1,Q1_PIPELINEGOAL),
+DIV0(SALES_CREDIT_ARR__C_Q2,Q2_PIPELINEGOAL),
+DIV0(SALES_CREDIT_ARR__C_Q3,Q3_PIPELINEGOAL),
+DIV0(SALES_CREDIT_ARR__C_Q4,Q4_PIPELINEGOAL),
+
+*
+FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_GOALS" t1
+left join  "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_PIPELINE_OWNED" t2
+on t1.SF_ID = t2.OWNERID;
+//  SELECT 
+//  OPP_OWNERNAME__SNW ,
+//    SUM(case when quarter(CLOSEDATE) = 1 then SALES_CREDIT_ARR__C else 0 end) as Q1_Pipeline,
+//    SUM(case when quarter(CLOSEDATE) = 2 then SALES_CREDIT_ARR__C else 0 end) as Q2_Pipeline,
+//    SUM(case when quarter(CLOSEDATE) = 3 then SALES_CREDIT_ARR__C else 0 end) as Q3_Pipeline,
+//    SUM(case when quarter(CLOSEDATE) = 4 then SALES_CREDIT_ARR__C else 0 end) as Q4_Pipeline,
+//    
+//    SUM(case when quarter(CLOSEDATE) = 1 and ISCLOSED then SALES_CREDIT_ARR__C else 0 end) as Q1_ClosedPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 2 and ISCLOSED then SALES_CREDIT_ARR__C else 0 end) as Q2_ClosedPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 3 and ISCLOSED then SALES_CREDIT_ARR__C else 0 end) as Q3_ClosedPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 4 and ISCLOSED then SALES_CREDIT_ARR__C else 0 end) as Q4_ClosedPipeline,
+//    
+//    SUM(case when quarter(CLOSEDATE) = 1 and ISCLOSED = False then SALES_CREDIT_ARR__C else 0 end) as Q1_OpenPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 2 and ISCLOSED = False then SALES_CREDIT_ARR__C else 0 end) as Q2_OpenPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 3 and ISCLOSED = False then SALES_CREDIT_ARR__C else 0 end) as Q3_OpenPipeline,
+//    SUM(case when quarter(CLOSEDATE) = 4 and ISCLOSED = False then SALES_CREDIT_ARR__C else 0 end) as Q4_OpenPipeline
+//    
+//FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_AE_ATTAINMENT_BASE"
+//GROUP BY  OPP_OWNERNAME__SNW
+//
+
+ 
+// select  OPP_CREATEDBY_NAME__SNW, CREATEDBYID,sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+//    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+//    where CLOSEDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+//    group by OPP_CREATEDBY_NAME__SNW, CREATEDBYID
+//    order by OPP_CREATEDBY_NAME__SNW, CREATEDBYID  
+//    asc
+
+
+
+
+select  OPP_CREATEDBY_NAME__SNW, CREATEDBYID,sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= '1/1/2021' and CREATEDDATE <= '3/31/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    group by OPP_CREATEDBY_NAME__SNW, CREATEDBYID
+    order by OPP_CREATEDBY_NAME__SNW, CREATEDBYID  
+    asc
+
+
+select  OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID,
+    sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT,
+    sum(case when SALES_CREDIT_ARR__C is null then 0 else SALES_CREDIT_ARR__C end) as SALES_CREDIT_ARR__C,
+    sum(case when AMOUNT is null then 0 else AMOUNT end) -  sum(case when SALES_CREDIT_ARR__C is null then 0 else SALES_CREDIT_ARR__C end) as DELTA,
+    round(sum(case when AMOUNT is null then 0 else AMOUNT end) -  sum(case when SALES_CREDIT_ARR__C is null then 0 else SALES_CREDIT_ARR__C end) /count(*)),
+    count(*)
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= '1/1/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+    group by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID
+    order by 2 ,1  ASC
+    
+    
+-- WORKING HERE
+
+
+    
+    
+    
+
+  
+    
+ /FIRST_AMOUNT_ADDED__C   
+    
+select  OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID ,OPPORTUNITY_ACCEPTED_BY_AE__C,stagename, sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+,sum(case when  FIRST_AMOUNT_ADDED__C   is null then 0 else AMOUNT end) as TOTAL_AMOUNT_FRIST
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= '1/1/2021'  and CREATEDDATE <= '3/31/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+    AND OWNERID = '0055A000008NOhiQAG'
+    AND ACCEPTED_DATE__C is not null
+    group by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID ,OPPORTUNITY_ACCEPTED_BY_AE__C,stagename
+    order by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID  ,OPPORTUNITY_ACCEPTED_BY_AE__C,stagename
+    asc    
+  
+  
+select  ID, OPPORTUNITY_OWNER_ROLE__C, OPP_OWNERNAME__SNW, AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where ( OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%' )
+       and CLOSEDATE >= '1/1/2021' and CREATEDDATE <= '3/31/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+
+    AND OWNERID = '0055A000008NOhiQAG'
+
+
+select OWNERID,OPP_OWNERNAME__SNW, count(*), sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= '1/1/2021' and CREATEDDATE <= '3/31/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+  AND OWNERID = '0065A00001bxfuXQAQ'
+    group by 1,2
+    order by TOTAL_AMOUNT desc
+
+    
+    
+    select  OPP_CREATEDBY_NAME__SNW, CREATEDBYID,sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+    where CLOSEDATE >= $begindate and CREATEDDATE < $enddate And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    group by OPP_CREATEDBY_NAME__SNW, CREATEDBYID
+    order by OPP_CREATEDBY_NAME__SNW, CREATEDBYID  
+    asc
+    
+    
+    
+//CREATE FUNCTION GetAIntFromStoredProc(@parm Nvarchar(50)) RETURNS INTEGER
+//
+//AS
+//BEGIN
+//   DECLARE @id INTEGER
+//
+//   set @id= (select TOP(1) id From tbl where col=@parm)
+//
+//   RETURN @id
+//END
+
+create or replace function get_countries_for_user ( id number )
+  returns table (country_code char, country_name varchar)
+  as 'select distinct c.country_code, c.country_name
+      from user_addresses a, countries c
+      where a.user_id = id
+      and c.country_code = a.country_code';
+      
+create or replace function udf_get_period_pipeline ( first_closedate date, last_createdate date, owner_id varchar   )
+  returns double 
+  as 'select  sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" a
+    where CLOSEDATE >= first_closedate and CREATEDDATE <= last_createdate And TYPE in (''New Business'' , ''Upsell'', ''Renewal'')
+    and (OPPORTUNITY_OWNER_ROLE__C like ''%AE%'' or OPPORTUNITY_OWNER_ROLE__C like ''%AM%'')
+    AND a.OWNERID = owner_id';
+    
+SELECT udf_get_period_pipeline ( '1/1/2021', '3/31/2021', '0055A000008NOhiQAG'   )
+    
+    
+
+      
+     select distinct c.country_code, c.country_name
+      from user_addresses a, countries c
+      where a.user_id = id
+      and c.country_code = a.country_code
+      
+      select  OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID,sum(case when AMOUNT is null then 0 else AMOUNT end) as TOTAL_AMOUNT
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" a
+    where CLOSEDATE >= '1/1/2021' and CREATEDDATE <= '3/31/2021' And TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and (OPPORTUNITY_OWNER_ROLE__C like '%AE%' or OPPORTUNITY_OWNER_ROLE__C like '%AM%')
+    AND OWNERID = '0055A000008NOhiQAG'
+    group by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID
+    order by OPP_OWNERNAME__SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID  
+    asc   
