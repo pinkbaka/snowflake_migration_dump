@@ -1,0 +1,924 @@
+
+
+ //  1 Find Stages before Quarter
+ //    Find the Last Stage before the Quarter began (Last Does not always mean highest)
+ 
+ 
+ //  1 Find stages during Quarter
+ //.   Narrow down to first day in stage for each stage
+ 
+ set BoQ =  '1/1/2020'; 
+set EoQ =  '3/31/2020';
+
+//set BoQ =  '1/1/2020'; 
+//set EoQ =  '3/31/2020';
+//
+     CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1_STAGES_B4_QTR"
+        as (
+            SELECT
+                '${BoQ}' as QTR_FirstDay,
+                t1.id as opp_id, t1.name, t1.stagename as current_stage, t1.ARR__C, BEST_ACCTSEGMENT_AT_CLOSE__SNW, t1.type, t1.createddate as opp_createdate, 
+                t2.stagename as opphistory_stage, 
+                t2.closedate as opphist_maxCloseDateinPeriod,  t1.closedate as opp_closedate, 
+                t2.CREATEDDATE as OppChangeDate, 
+                rank () over (partition by t1.ID order by  t2.CREATEDDATE desc, t2.id desc ) as changerank
+            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+            left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+            on t1.id = t2.opportunityid
+                       where t1.CLOSEDATE >= $BoQ                    --@Parameter
+                and date(t1.CREATEDDATE) <  $BoQ            --@Parameter
+                and date(t2.CREATEDDATE) <  $BoQ             --@Parameter
+//                and date(t2.CREATEDDATE) <=  '${EoQ}'             --@Parameter
+
+                and t1.type in ('New Business', 'Renewal', 'Upsell')
+                and t2.stagename not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+                //and t2.stagename not in ('Closed Won','Closed Lost', 'Disqualified')
+            --group by 1,2,3,4,5,6, 7,8,9,10,11,12
+            and t1.id = '0065A00001YUGKFQA5'
+            order by 2, changerank);
+            
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+        as 
+            (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1_STAGES_B4_QTR" where  changerank = 1 
+            );
+            
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR"
+        as 
+            (
+                SELECT 
+                    OPP_ID as OPP_ID2,
+                    case when (OPPHIST_MAXCLOSEDATEINPERIOD  between $BoQ  and $EoQ ) then TRUE else FALSE end as hadCloseDateinCQ, 
+                    case when (OPPHIST_MAXCLOSEDATEINPERIOD  < $BoQ  ) then TRUE else FALSE end as hadCloseDateinPQ, 
+                    case when opp_closedate > $EoQ then TRUE else FALSE end as HasClosedDate_FQ,  
+                    case when opp_closedate > $EoQ and  (OPPHIST_MAXCLOSEDATEINPERIOD  between $BoQ and $EoQ  )
+                    then TRUE else FALSE end as pushed_NQ,  
+                    case when opp_closedate  between $BoQ  and $EoQ  then TRUE else FALSE end as CloseDateinCQ,
+                    case when OPPHIST_MAXCLOSEDATEINPERIOD > $EoQ then TRUE else FALSE end as HadCloseDate_FQ, 
+                    OPP_CLOSEDATE-OPPHIST_MAXCLOSEDATEINPERIOD as delta_PdMax_vs_OppClose,
+                    case 
+                          when hadCloseDateinCQ and HasClosedDate_FQ then 'pushed to NQ'
+                          when CloseDateinCQ and HadCloseDate_FQ then 'pulled from FQ'
+                          when hadCloseDateinCQ and CloseDateinCQ then 'set and close in CQ'
+                          when HasClosedDate_FQ then 'set to close in FQ'
+                          when hadCloseDateinPQ and CloseDateinCQ then 'zombie deal'
+                          else ' other' end as closecategory
+                    --,* 
+                FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR" 
+            );            
+            
+            
+            
+       
+// case when (OPPHIST_MAXCLOSEDATEINPERIOD  between '${BoQ}' and '${EoQ}' ) then TRUE else FALSE end as hadCloseDateinCQ, 
+//                case when (OPPHIST_MAXCLOSEDATEINPERIOD  < '${BoQ}' ) then TRUE else FALSE end as hadCloseDateinPQ, 
+//                case when opp_closedate > '${EoQ}' then TRUE else FALSE end as HasClosedDate_FQ,  
+//                case when opp_closedate > '${EoQ}' and  (OPPHIST_MAXCLOSEDATEINPERIOD  between '${BoQ}' and '${EoQ}' )
+//                then TRUE else FALSE end as pushed_NQ,  
+//                case when opp_closedate  between '${BoQ}' and '${EoQ}'  then TRUE else FALSE end as CloseDateinCQ,
+//                case when OPPHIST_MAXCLOSEDATEINPERIOD > '${EoQ}' then TRUE else FALSE end as HadCloseDate_FQ, 
+//                OPP_CLOSEDATE-OPPHIST_MAXCLOSEDATEINPERIOD as delta_PdMax_vs_OppClose,             
+            
+
+
+
+     CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR"
+        as (
+            SELECT
+                '${BoQ}' as QTR_FirstDay,
+                t1.id as opp_id, t1.name, t1.stagename as current_stage, t1.ARR__C, BEST_ACCTSEGMENT_AT_CLOSE__SNW, t1.type, t1.createddate as opp_createdate, 
+                t2.stagename as opphistory_stage, 
+                t2.closedate as opphist_maxCloseDateinPeriod,  t1.closedate as opp_closedate, 
+                t2.CREATEDDATE as OppChangeDate, 
+                rank () over (partition by t1.ID, t2.stagename order by  t2.CREATEDDATE asc, t2.id asc ) as changerank
+            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+            left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+            on t1.id = t2.opportunityid
+                       where t1.CLOSEDATE >= $BoQ                    --@Parameter
+                and date(t1.CREATEDDATE) <  $BoQ            --@Parameter
+                and date(t2.CREATEDDATE) >=  $BoQ             --@Parameter
+               and date(t2.CREATEDDATE) <=   $EoQ              --@Parameter
+
+                and t1.type in ('New Business', 'Renewal', 'Upsell')
+                and t2.stagename not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+                //and t2.stagename not in ('Closed Won','Closed Lost', 'Disqualified')
+            --group by 1,2,3,4,5,6, 7,8,9,10,11,12
+            order by 2, changerank);
+            
+            
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2A_STAGES_IN_QTR_RANKED"
+        as 
+            (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR" where  changerank = 1 
+            );      
+
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR"
+        as 
+            (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+            UNION --ALL
+            SELECT *  FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2B_STAGES_IN_QTR_RANKED"
+            );       
+
+
+
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5"
+            as (
+                SELECT OPP_ID, NAME,QTR_FirstDay
+                    ,case when "'Stage 0: First Call'"                      is not null then 1 else 0 end as "S0" 
+                    ,case when "'Stage 1: Initial Engagement'"              is not null then 1 else 0 end as "S1" 
+                    ,case when "'Stage 2: Discovery'"                       is not null then 1 else 0 end as "S2" 
+                    ,case when "'Stage 3: Business & Solution Alignment'"   is not null then 1 else 0 end  as "S3" 
+                    ,case when "'Stage 4: Validation'"                      is not null then 1 else 0 end as "S4" 
+                    ,case when "'Stage 5: Negotiation'"                     is not null then 1 else 0 end as "S5" 
+                FROM               
+                    (SELECT OPP_ID,NAME, QTR_FirstDay, OPPHISTORY_STAGE FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR")
+                PIVOT(min(OPPHISTORY_STAGE) for OPPHISTORY_STAGE in ('Stage 0: First Call',
+                                                     'Stage 1: Initial Engagement',
+                                                     'Stage 2: Discovery',
+                                                     'Stage 3: Business & Solution Alignment',
+                                                     'Stage 4: Validation',
+                                                     'Stage 5: Negotiation')) as p
+              );            
+              
+              
+              
+              CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5B"
+            as (
+                SELECT OPP_ID, NAME,QTR_FirstDay
+//                    , IFNULL("'Stage 0: First Call'",'2000-01-01')                      as SO_DATE -- 00:00:00.000
+//                    , IFNULL("'Stage 1: Initial Engagement'",'2000-01-01')              as S1_DATE
+//                    , IFNULL("'Stage 2: Discovery'",'2000-01-01')                       as S2_DATE
+//                    , IFNULL("'Stage 3: Business & Solution Alignment'",'2000-01-01')   as S3_DATE
+//                    , IFNULL("'Stage 4: Validation'",'2000-01-01')                      as S4_DATE
+//                    , IFNULL("'Stage 5: Negotiation'",'2000-01-01')                     as S5_DATE
+                    ,"'Stage 0: First Call'"                        as S0_DATE -- 00:00:00.000
+                    ,"'Stage 1: Initial Engagement'"                as S1_DATE
+                    ,"'Stage 2: Discovery'"                         as S2_DATE
+                    ,"'Stage 3: Business & Solution Alignment'"     as S3_DATE
+                    ,"'Stage 4: Validation'"                        as S4_DATE
+                    ,"'Stage 5: Negotiation'"                       as S5_DATE
+                    ,"'Closed Won'"                                 as CW_DATE
+                    ,"'Closed Lost'"                                as CL_DATE
+                    ,"'Disqualified'"                               as DQ_DATE
+                    ,case when "'Stage 0: First Call'"                      is not null then 1 else 0 end as "S0" 
+                    ,case when "'Stage 1: Initial Engagement'"              is not null then 1 else 0 end as "S1" 
+                    ,case when "'Stage 2: Discovery'"                       is not null then 1 else 0 end as "S2" 
+                    ,case when "'Stage 3: Business & Solution Alignment'"   is not null then 1 else 0 end as "S3" 
+                    ,case when "'Stage 4: Validation'"                      is not null then 1 else 0 end as "S4" 
+                    ,case when "'Stage 5: Negotiation'"                     is not null then 1 else 0 end as "S5" 
+                    ,case when "'Closed Won'"                               is not null then 1 else 0 end as "CW" 
+                FROM               
+                    (SELECT OPP_ID,NAME,OPPHISTORY_STAGE,QTR_FirstDay, OPPCHANGEDATE FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR")
+                PIVOT(min(OPPCHANGEDATE) for OPPHISTORY_STAGE in ('Stage 0: First Call',
+                                                                   'Stage 1: Initial Engagement',
+                                                                   'Stage 2: Discovery',
+                                                                   'Stage 3: Business & Solution Alignment',
+                                                                   'Stage 4: Validation',
+                                                                   'Stage 5: Negotiation',
+                                                                   'Closed Won',
+                                                                   'Closed Lost',
+                                                                   'Disqualified'
+                                                                 )) as p
+              );       
+              
+               CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS6_LEASTGREATEST_BY_STAGE"
+              as ( 
+                SELECT * 
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000')) as S0_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000')) as S1_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000')) as S2_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000'),IFNULL(S3_DATE,'1/1/1000')) as S3_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000'),IFNULL(S3_DATE,'1/1/1000'),IFNULL(S4_DATE,'1/1/1000')) as S4_MAX
+
+                
+                ,LEAST(IFNULL(S2_DATE,'1/1/3000'),IFNULL(S3_DATE,'1/1/3000'),IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S2_MIN
+                ,LEAST(IFNULL(S3_DATE,'1/1/3000'),IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S3_MIN
+                ,LEAST(IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S4_MIN
+                ,LEAST(IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S5_MIN
+                ,LEAST(IFNULL(CW_DATE,'1/1/3000')) as CW_MIN
+                FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5B"
+                   
+              );
+              
+                            
+              CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS7"
+              as (              
+                SELECT 
+                --OPP_ID, NAME,
+                case when s0 = 1                                                        then 'Stage 0: First Call'                    else NULL end as S0_Imputed,
+                case when (s0 > 0 and S2+S3+S4+S5+CW > 0 and S2_MIN >= S0_MAX ) or s1 = 1 then 'Stage 1: Initial Engagement'            else NULL end as S1_Imputed, 
+                case when (s0+s1 > 0 and S3+S4+S5+CW > 0 and S3_MIN >= S1_MAX ) or s2 = 1 then 'Stage 2: Discovery'                     else NULL end as S2_Imputed, 
+                case when (s0+s1+s2 > 0 and S4+S5+CW > 0 and S4_MIN >= S2_MAX ) or s3 = 1 then 'Stage 3: Business & Solution Alignment' else NULL end as S3_Imputed, 
+                case when (s0+s1+s2+s3 > 0 and S5+CW > 0 and S5_MIN >= S3_MAX ) or s4 = 1 then 'Stage 4: Validation'                    else NULL end as S4_Imputed, 
+                case when (s0+s1+s2+s3+s4 > 0 and CW > 0 and CW_MIN >= S4_MAX ) or s5 = 1 then 'Stage 5: Negotiation'                   else NULL end as S5_Imputed
+                  ,*
+                FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS6_LEASTGREATEST_BY_STAGE"
+                ) ;            
+                
+//              CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS"
+//              as (              
+//                SELECT 
+//                OPP_ID, NAME,
+//                case when s0 = 1                                then 'Stage 0: First Call'                    else NULL end as S0_Imputed,
+//                case when s0 > 0 and S2+S3+S4+S5 > 0  or s1 = 1 then 'Stage 1: Initial Engagement'            else NULL end as S1_Imputed, 
+//                case when s0+s1 > 0 and S3+S4+S5 > 0  or s2 = 1 then 'Stage 2: Discovery'                     else NULL end as S2_Imputed, 
+//                case when s0+s1+s2 > 0 and S4+S5 > 0  or s3 = 1 then 'Stage 3: Business & Solution Alignment' else NULL end as S3_Imputed, 
+//                case when s0+s1+s2+s3 > 0 and S5 > 0  or s4 = 1 then 'Stage 4: Validation'                    else NULL end as S4_Imputed, 
+//                case when s5 = 1                                then 'Stage 5: Negotiation'                   else NULL end as S5_Imputed
+//                 -- ,*
+//                FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5"
+//                ) ;   
+                CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8"
+                as 
+                (   
+                select OPP_ID, NAME, IMPUTED_STAGE
+                from  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS7"
+                unpivot(IMPUTED_STAGE for tmp in (S0_IMPUTED,
+                            S1_IMPUTED,
+                            S2_IMPUTED,
+                            S3_IMPUTED,
+                            S4_IMPUTED,
+                            S5_IMPUTED))
+                            order by name, tmp
+                );   
+
+SELECT 2020-05-04 > NULL;
+
+SELECT * FROM
+(
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+UNION ALL
+SELECT *  FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2B_STAGES_IN_QTR_RANKED"
+)
+WHERE name like '%Algor%';
+--- PART 1            
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1_STAGES_B4_QTR"
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+order by name;
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+
+
+
+SELECT name , count(*) FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+group by name
+having count(*) >1;
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR"
+WHERE OPP_ID2 IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+
+--- PART 2
+SELECT OPP_ID,NAME,TYPE,OPPHISTORY_STAGE, OPPCHANGEDATE, changerank FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR"
+//WHERE name like '%Algor%'
+ORder by name,OPPHISTORY_STAGE, changerank
+;
+SELECT COUNT (DISTINCT OPP_ID) FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR";
+
+SELECT OPP_ID,NAME,TYPE,OPPHISTORY_STAGE, OPPCHANGEDATE, changerank FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2B_STAGES_IN_QTR_RANKED"
+//WHERE name like '%Algor%'
+ORder by name,OPPHISTORY_STAGE, changerank
+;
+
+--OPP_ID IN ('0065A00001YWPW0QAP')
+
+--- PART 3
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR"
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+SELECT COUNT (DISTINCT OPP_ID) FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR";
+-- Part 5
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5";
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5B"
+WHERE name like '%Move%';
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS6";
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS7"
+WHERE 
+OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8"
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+
+use "MTL_LOAD_TEST";
+
+create or replace TABLE TMP_PUSHANALYSIS_FINAL (
+	CLOSECATEGORY VARCHAR(19),
+	HADCLOSEDATEINCQ BOOLEAN,
+	HADCLOSEDATEINPQ BOOLEAN,
+	HASCLOSEDDATE_FQ BOOLEAN,
+	PUSHED_NQ BOOLEAN,
+	CLOSEDATEINCQ BOOLEAN,
+	HADCLOSEDATE_FQ BOOLEAN,
+	DELTA_PDMAX_VS_OPPCLOSE NUMBER(9,0),
+	QTR_FIRSTDAY TIMESTAMP_NTZ(9),
+	OPP_ID VARCHAR(18),
+	NAME VARCHAR(120),
+	CURRENT_STAGE VARCHAR(255),
+  	OPPHISTORY_STAGE VARCHAR(255),
+	ARR__C NUMBER(18,2),
+	BEST_ACCTSEGMENT_AT_CLOSE__SNW VARCHAR(5),
+	TYPE VARCHAR(255),
+	OPP_CREATEDATE TIMESTAMP_NTZ(9),
+	OPPHIST_MAXCLOSEDATEINPERIOD DATE,
+	OPP_CLOSEDATE DATE,
+	OPPCHANGEDATE TIMESTAMP_NTZ(9),
+	CHANGERANK NUMBER(18,0),
+    OPPORTUNITYID VARCHAR(18),
+    STAGENAME VARCHAR(255),
+    MIN_CDATE TIMESTAMP_NTZ(9),
+    IMPUTED_STAGE VARCHAR(255),
+    COHORT VARCHAR(10),
+    IMPUTED_STAGE_FINAL VARCHAR(255)
+);
+
+use "MTL_LOAD_TEST";
+
+create or replace TABLE TMP_PUSHANALYSIS_FINAL (
+    OPP_ID VARCHAR(18),
+	NAME VARCHAR(255),
+    IMPUTED_STAGE VARCHAR(255),
+    TYPE VARCHAR(255),
+    QTR_FIRSTDAY TIMESTAMP_NTZ(9),
+ BEST_ACCTSEGMENT_AT_CLOSE__SNW VARCHAR(5), 
+  
+  
+	CLOSECATEGORY VARCHAR(19)
+//  ,
+//	HADCLOSEDATEINCQ BOOLEAN,
+//	HADCLOSEDATEINPQ BOOLEAN,
+//	HASCLOSEDDATE_FQ BOOLEAN,
+//	PUSHED_NQ BOOLEAN,
+//	CLOSEDATEINCQ BOOLEAN,
+//	HADCLOSEDATE_FQ BOOLEAN
+//  ,
+//	DELTA_PDMAX_VS_OPPCLOSE NUMBER(9,0),
+//	
+//	
+//
+//	CURRENT_STAGE VARCHAR(255),
+//  	OPPHISTORY_STAGE VARCHAR(255),
+//	ARR__C NUMBER(18,2),
+
+//	
+//	OPP_CREATEDATE TIMESTAMP_NTZ(9),
+//	OPPHIST_MAXCLOSEDATEINPERIOD DATE,
+//	OPP_CLOSEDATE DATE,
+//	OPPCHANGEDATE TIMESTAMP_NTZ(9),
+
+);
+
+
+CREATE or replace PROCEDURE usp_QUARTER_PUSH_ANALYSIS(StartofQTR VARCHAR, EndofQTR VARCHAR)
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  AS
+  $$
+    var BoQ = STARTOFQTR; 
+    var EoQ = ENDOFQTR;
+            // Create temp table to combine opportunity and opportunity history
+        // Look at all the opportunities that came into a quarter
+    var sql_command = `
+
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1_STAGES_B4_QTR"
+        as (
+            SELECT
+                '${BoQ}' as QTR_FirstDay,
+                t1.id as opp_id, t1.name, t1.stagename as current_stage, t1.ARR__C, BEST_ACCTSEGMENT_AT_CLOSE__SNW, t1.type, t1.createddate as opp_createdate, 
+                t2.stagename as opphistory_stage, 
+                t2.closedate as opphist_maxCloseDateinPeriod,  t1.closedate as opp_closedate, 
+                t2.CREATEDDATE as OppChangeDate, 
+                rank () over (partition by t1.ID order by  t2.CREATEDDATE desc, t2.id desc ) as changerank
+            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+            left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+            on t1.id = t2.opportunityid
+            where t1.CLOSEDATE >= '${BoQ}'                     --@Parameter
+                and date(t1.CREATEDDATE) <  '${BoQ}'               --@Parameter
+                and date(t2.CREATEDDATE) <  '${BoQ}'             --@Parameter
+
+                and t1.type in ('New Business', 'Renewal', 'Upsell')
+                and t2.stagename not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+                //and t2.stagename not in ('Closed Won','Closed Lost', 'Disqualified')
+            --group by 1,2,3,4,5,6, 7,8,9,10,11,12
+            order by 2, changerank
+        )`;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+            // Find the highest ranked stage from the previous period
+        // this is the stage the opportunity enters the quarter in
+        var sql_command = `
+
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+        as 
+        (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1_STAGES_B4_QTR" where  changerank = 1 
+        )`;                
+          
+        var statement = snowflake.createStatement( {sqlText: sql_command} );
+        var result_set = statement.execute(); 
+  
+
+          
+          
+    var sql_command = `
+    // Find the highest ranked stage from the previous period
+    // this is the stage the opportunity enters the quarter in
+    
+     CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR"
+        as (
+            SELECT
+                '${BoQ}' as QTR_FirstDay,
+                t1.id as opp_id, t1.name, t1.stagename as current_stage, t1.ARR__C, BEST_ACCTSEGMENT_AT_CLOSE__SNW, t1.type, t1.createddate as opp_createdate, 
+                t2.stagename as opphistory_stage, 
+                t2.closedate as opphist_maxCloseDateinPeriod,  t1.closedate as opp_closedate, 
+                t2.CREATEDDATE as OppChangeDate, 
+                rank () over (partition by t1.ID, t2.stagename order by  t2.CREATEDDATE asc, t2.id asc ) as changerank
+            FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+            left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+            on t1.id = t2.opportunityid
+                where t1.CLOSEDATE >= '${BoQ}'                    --@Parameter
+                and date(t1.CREATEDDATE) <= '${EoQ}'            --@Parameter
+                and date(t2.CREATEDDATE) >=  '${BoQ}'             --@Parameter
+                and date(t2.CREATEDDATE) <=  '${EoQ}'              --@Parameter
+
+                and t1.type in ('New Business', 'Renewal', 'Upsell')
+                and t2.stagename not in ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+                //and t2.stagename not in ('Closed Won','Closed Lost', 'Disqualified')
+            --group by 1,2,3,4,5,6, 7,8,9,10,11,12
+            order by 2, changerank)`;                
+          
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();           
+          
+   var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2A_STAGES_IN_QTR_RANKED"
+        as 
+            (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2_STAGES_IN_QTR" where  changerank = 1 
+            )`;                     
+          
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();           
+              
+              
+              
+    var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR"
+        as 
+        (
+            SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR"
+            UNION 
+            SELECT *  FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS2A_STAGES_IN_QTR_RANKED"
+        )`;                     
+          
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+          
+          
+          var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR"
+        as 
+        (
+                SELECT 
+                    OPP_ID as OPP_ID2,
+                    '${BoQ}' as QTR_FirstDay,
+                    case when (OPPHIST_MAXCLOSEDATEINPERIOD  between '${BoQ}'  and '${EoQ}' ) then TRUE else FALSE end as hadCloseDateinCQ, 
+                    case when (OPPHIST_MAXCLOSEDATEINPERIOD  < '${BoQ}'  ) then TRUE else FALSE end as hadCloseDateinPQ, 
+                    case when opp_closedate > '${EoQ}' then TRUE else FALSE end as HasClosedDate_FQ,  
+                    case when opp_closedate > '${EoQ}' and  (OPPHIST_MAXCLOSEDATEINPERIOD  between '${BoQ}' and '${EoQ}'  )
+                    then TRUE else FALSE end as pushed_NQ,  
+                    case when opp_closedate  between '${BoQ}'  and '${EoQ}'   then TRUE else FALSE end as CloseDateinCQ,
+                    case when OPPHIST_MAXCLOSEDATEINPERIOD > '${EoQ}' then TRUE else FALSE end as HadCloseDate_FQ, 
+                    OPP_CLOSEDATE-OPPHIST_MAXCLOSEDATEINPERIOD as delta_PdMax_vs_OppClose,
+                    case 
+                          when hadCloseDateinCQ and HasClosedDate_FQ then 'pushed to NQ'
+                          when CloseDateinCQ and HadCloseDate_FQ then 'pulled from FQ'
+                          when hadCloseDateinCQ and CloseDateinCQ then 'set and close in CQ'
+                          when HasClosedDate_FQ then 'set to close in FQ'
+                          when hadCloseDateinPQ and CloseDateinCQ then 'zombie deal'
+                          else ' other' end as CLOSECATEGORY
+                FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR" 
+        )`;
+        var statement = snowflake.createStatement( {sqlText: sql_command} );
+        var result_set = statement.execute(); 
+           
+          
+          var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_GROUPED_CLOSECATEGORIES"
+        as 
+        (
+                SELECT OPP_ID2,qtr_firstday, CLOSECATEGORY 
+                FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR" 
+                group by 1,2,3 
+                order by 1,2,3
+        )`;
+        var statement = snowflake.createStatement( {sqlText: sql_command} );
+        var result_set = statement.execute();           
+          
+          
+          
+          
+    var sql_command = `
+              CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5B"
+            as (
+                SELECT OPP_ID, NAME, TYPE,QTR_FirstDay,BEST_ACCTSEGMENT_AT_CLOSE__SNW
+//                    , IFNULL("'Stage 0: First Call'",'2000-01-01')                      as SO_DATE -- 00:00:00.000
+//                    , IFNULL("'Stage 1: Initial Engagement'",'2000-01-01')              as S1_DATE
+//                    , IFNULL("'Stage 2: Discovery'",'2000-01-01')                       as S2_DATE
+//                    , IFNULL("'Stage 3: Business & Solution Alignment'",'2000-01-01')   as S3_DATE
+//                    , IFNULL("'Stage 4: Validation'",'2000-01-01')                      as S4_DATE
+//                    , IFNULL("'Stage 5: Negotiation'",'2000-01-01')                     as S5_DATE
+                    ,"'Stage 0: First Call'"                        as S0_DATE -- 00:00:00.000
+                    ,"'Stage 1: Initial Engagement'"                as S1_DATE
+                    ,"'Stage 2: Discovery'"                         as S2_DATE
+                    ,"'Stage 3: Business & Solution Alignment'"     as S3_DATE
+                    ,"'Stage 4: Validation'"                        as S4_DATE
+                    ,"'Stage 5: Negotiation'"                       as S5_DATE
+                    ,"'Closed Won'"                                 as CW_DATE
+                    ,"'Closed Lost'"                                as CL_DATE
+                    ,"'Disqualified'"                               as DQ_DATE
+                    ,case when "'Stage 0: First Call'"                      is not null then 1 else 0 end as "S0" 
+                    ,case when "'Stage 1: Initial Engagement'"              is not null then 1 else 0 end as "S1" 
+                    ,case when "'Stage 2: Discovery'"                       is not null then 1 else 0 end as "S2" 
+                    ,case when "'Stage 3: Business & Solution Alignment'"   is not null then 1 else 0 end as "S3" 
+                    ,case when "'Stage 4: Validation'"                      is not null then 1 else 0 end as "S4" 
+                    ,case when "'Stage 5: Negotiation'"                     is not null then 1 else 0 end as "S5" 
+                    ,case when "'Closed Won'"                               is not null then 1 else 0 end as "CW" 
+                FROM               
+                    (SELECT OPP_ID,NAME,OPPHISTORY_STAGE,OPPCHANGEDATE,TYPE,QTR_FirstDay,BEST_ACCTSEGMENT_AT_CLOSE__SNW FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR")
+                PIVOT(min(OPPCHANGEDATE) for OPPHISTORY_STAGE in ('Stage 0: First Call',
+                                                                   'Stage 1: Initial Engagement',
+                                                                   'Stage 2: Discovery',
+                                                                   'Stage 3: Business & Solution Alignment',
+                                                                   'Stage 4: Validation',
+                                                                   'Stage 5: Negotiation',
+                                                                   'Closed Won',
+                                                                   'Closed Lost',
+                                                                   'Disqualified'
+                                                                 )) as p
+              )  
+        `;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+  
+  
+    
+    var sql_command = `
+          CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS6_LEASTGREATEST_BY_STAGE"
+              as ( 
+                SELECT * 
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000')) as S0_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000')) as S1_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000')) as S2_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000'),IFNULL(S3_DATE,'1/1/1000')) as S3_MAX
+                ,GREATEST(IFNULL(S0_DATE,'1/1/1000'),IFNULL(S1_DATE,'1/1/1000'),IFNULL(S2_DATE,'1/1/1000'),IFNULL(S3_DATE,'1/1/1000'),IFNULL(S4_DATE,'1/1/1000')) as S4_MAX
+
+                
+                ,LEAST(IFNULL(S2_DATE,'1/1/3000'),IFNULL(S3_DATE,'1/1/3000'),IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S2_MIN
+                ,LEAST(IFNULL(S3_DATE,'1/1/3000'),IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S3_MIN
+                ,LEAST(IFNULL(S4_DATE,'1/1/3000'),IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S4_MIN
+                ,LEAST(IFNULL(S5_DATE,'1/1/3000'),IFNULL(CW_DATE,'1/1/3000')) as S5_MIN
+                ,LEAST(IFNULL(CW_DATE,'1/1/3000')) as CW_MIN
+                FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS5B"
+                   
+              )`;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+    
+    var sql_command = `
+             CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS7"
+              as (              
+                SELECT 
+                case when s0 = 1                                                        then 'Stage 0: First Call'                    else NULL end as S0_Imputed,
+                case when (s0 > 0 and S2+S3+S4+S5+CW > 0 and S2_MIN >= S0_MAX ) or s1 = 1 then 'Stage 1: Initial Engagement'            else NULL end as S1_Imputed, 
+                case when (s0+s1 > 0 and S3+S4+S5+CW > 0 and S3_MIN >= S1_MAX ) or s2 = 1 then 'Stage 2: Discovery'                     else NULL end as S2_Imputed, 
+                case when (s0+s1+s2 > 0 and S4+S5+CW > 0 and S4_MIN >= S2_MAX ) or s3 = 1 then 'Stage 3: Business & Solution Alignment' else NULL end as S3_Imputed, 
+                case when (s0+s1+s2+s3 > 0 and S5+CW > 0 and S5_MIN >= S3_MAX ) or s4 = 1 then 'Stage 4: Validation'                    else NULL end as S4_Imputed, 
+                case when (s0+s1+s2+s3+s4 > 0 and CW > 0 and CW_MIN >= S4_MAX ) or s5 = 1 then 'Stage 5: Negotiation'                   else NULL end as S5_Imputed
+                  ,*
+                FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS6_LEASTGREATEST_BY_STAGE"
+                )`;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+
+              
+              
+    var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8"
+        as 
+        (   
+            select OPP_ID, NAME, IMPUTED_STAGE,TYPE,QTR_FirstDay,BEST_ACCTSEGMENT_AT_CLOSE__SNW
+            from  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS7"
+            unpivot(IMPUTED_STAGE for tmp in (S0_IMPUTED,
+                                                S1_IMPUTED,
+                                                S2_IMPUTED,
+                                                S3_IMPUTED,
+                                                S4_IMPUTED,
+                                                S5_IMPUTED))
+            order by name, tmp
+        )`;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+          
+        var sql_command = `
+        CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS9"
+        as 
+        (   
+            SELECT t1.*,
+          t2.CLOSECATEGORY
+//          ,
+//          t2.HADCLOSEDATEINCQ,
+//          t2.HADCLOSEDATEINPQ,
+//          t2.HASCLOSEDDATE_FQ,
+//          t2.PUSHED_NQ,
+//          t2.CLOSEDATEINCQ,
+//          t2.HADCLOSEDATE_FQ
+          
+            FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8" t1
+            LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_GROUPED_CLOSECATEGORIES" t2
+            on t1.opp_id = t2.OPP_ID2
+        )`;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();       
+          
+    var sql_command = `
+           INSERT INTO "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+              SELECT *
+              FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS9" 
+              `;                            
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute(); 
+          
+
+  return 'Done.';
+  $$;
+
+
+          
+call usp_QUARTER_PUSH_ANALYSIS( '1/1/2020', '3/31/2020');
+call usp_QUARTER_PUSH_ANALYSIS( '4/1/2020', '6/30/2020');
+call usp_QUARTER_PUSH_ANALYSIS( '7/1/2020', '9/30/2020');
+call usp_QUARTER_PUSH_ANALYSIS('10/1/2020','12/31/2020');
+call usp_QUARTER_PUSH_ANALYSIS( '1/1/2021', '3/31/2021');
+call usp_QUARTER_PUSH_ANALYSIS( '4/1/2021', '6/30/2021');
+call usp_QUARTER_PUSH_ANALYSIS( '7/1/2021', '9/30/2021');
+call usp_QUARTER_PUSH_ANALYSIS( '10/1/2021', '12/31/2021');
+    
+          SELECT;
+            //SUM(SALES_CREDIT_ARR__C)
+          SELECT 
+//           CREATEDDATE
+          SUM(SALES_CREDIT_ARR__C)
+          FROM
+(
+          SELECT DISTINCT t1.opp_id, t2.pulled_from_FQ,t3.set_and_close_inQ,push_to_NQ,zombie_deal,
+          t6.SALES_CREDIT_ARR__C,t6.stagename, T6.CREATEDDATE
+          FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL" t1
+
+          left join
+          (SELECT opp_id, CLOSECATEGORY as pulled_from_FQ
+          FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          where to_Date(QTR_FIRSTDAY) = '7/1/2021' 
+          and CLOSECATEGORY not in ('set to close in FQ')
+          and CLOSECATEGORY = 'pulled from FQ'
+          group by 1,2) t2
+          on t1.opp_id = t2.opp_id
+          left join
+          (SELECT opp_id,CLOSECATEGORY as set_and_close_inQ
+          FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          where to_Date(QTR_FIRSTDAY) = '7/1/2021' 
+          and CLOSECATEGORY not in ('set to close in FQ')
+          and CLOSECATEGORY = 'set and close in CQ'
+          group by 1,2) t3
+          on t1.opp_id = t3.opp_id
+          left join
+          (SELECT opp_id, CLOSECATEGORY as push_to_NQ
+          FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          where to_Date(QTR_FIRSTDAY) = '7/1/2021' 
+          and CLOSECATEGORY not in ('set to close in FQ')
+          and CLOSECATEGORY = 'pushed to NQ'
+          group by 1,2) t4
+          on t1.opp_id = t4.opp_id
+          
+          left join
+          (SELECT opp_id, CLOSECATEGORY as zombie_deal
+          FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          where to_Date(QTR_FIRSTDAY) = '7/1/2021' 
+          and CLOSECATEGORY not in ('set to close in FQ')
+          and CLOSECATEGORY = 'zombie deal'
+          group by 1,2) t5
+          on t1.opp_id = t5.opp_id
+          left join
+          "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t6
+          on t1.opp_id = t6.id
+                    where to_Date(QTR_FIRSTDAY) = '7/1/2021' 
+          and CLOSECATEGORY not in ('set to close in FQ')
+          and SALES_CREDIT_ARR__C > 0
+  )
+          where pulled_from_FQ is null
+         AND CREATEDDATE < '7/1/2021'
+          ;
+          
+           b
+       
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+                      SELECT t1.*,
+                    t2.CLOSECATEGORY,
+          t2.HADCLOSEDATEINCQ,
+          t2.HADCLOSEDATEINPQ,
+          t2.HASCLOSEDDATE_FQ,
+          t2.PUSHED_NQ,
+          t2.CLOSEDATEINCQ,
+          t2.HADCLOSEDATE_FQ
+          
+            FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8" t1
+            LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR" t2
+            on t1.opp_id = t2.OPP_ID2;
+
+          SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8"
+          WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');
+          SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR";
+          
+          
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1A_HIGHEST_STAGE_B4_QTR";
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS3_ALL_STAGES_IN_QTR"
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');          
+          
+          
+  SELECT * FROM       "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS9"
+           WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP')
+          order by name;  
+  SELECT * FROM            "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS8"
+          WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP')
+          order by name; 
+          
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR"
+           WHERE OPP_ID2 IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');        
+          
+          
+  SELECT * FROM    "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR";                
+  SELECT OPP_ID2,qtr_firstday, CLOSECATEGORY FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR" group by 1,2,3 order by 1,2,3;
+           WHERE OPP_ID2 IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP');       
+          
+ SELECT * FROM         "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS1B_HIGHEST_STAGE_B4_QTR" where opp_ID2 = '0065A00001YUMogQAH';
+ 
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+WHERE OPP_ID IN ('0065A00001YWPW0QAP','0065A00001HvCOLQA3','0065A00001WubHhQAJ','0065A00001YUGKFQA5', '0065A00001YVHWeQAP','0065A00001bwBDPQA2','0065A00001ZhIvpQAF')
+       order   by name , qtr_firstday, imputed_stage;          
+          
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+WHERE TYPE = 'New Business'
+       order   by name , qtr_firstday, imputed_stage;        
+          
+SELECT * , year(qtr_firstday), quarter(qtr_firstday) FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+WHERE TYPE = 'New Business' 
+    //      and (name like '%Paypal - D%')
+          and name like '%Acolad%'
+          //'%[24]7%'
+       order   by name , qtr_firstday, imputed_stage;        
+       
+          SELECT t1.OPP_ID, t1.BEST_ACCTSEGMENT_AT_CLOSE__SNW,  t1.type,   t1.CLOSECATEGORY
+ , count(t1.*) as CT
+ --,  * 
+ FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL" t1
+    left join           "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2
+          on t1.opp_id = t2.id
+   --where IMPUTED_STAGE is not null
+  --where OPPSHISTORY_STAGE like '%Stage%'
+          where CLOSECATEGORY = 'pushed to NQ'
+          and isclosed = false
+ group by 1,2,3,4
+ order by ct desc;                
+         
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_UNPIVOT" AS
+(
+   SELECT BEST_ACCTSEGMENT_AT_CLOSE__SNW,  type,  left(QTR_FIRSTDAY,10) as RPT_QTR, IMPUTED_STAGE, CLOSECATEGORY
+ , count(*) as CT
+ --,  * 
+ FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+   --where IMPUTED_STAGE is not null
+  --where OPPSHISTORY_STAGE like '%Stage%'
+ group by 1,2,3,4,5
+ order by 1,2,3,4,5
+);
+SELECT *FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_UNPIVOT"
+--where OPPSHISTORY_STAGE not like '%Stage%'
+;
+
+
+
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP1" AS
+(
+SELECT *
+FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_UNPIVOT"
+PIVOT(SUM(CT) for CLOSECATEGORY in (
+                                    'pulled from FQ',
+                                    'pushed to NQ',
+                                    'set and close in CQ',
+                                    'set to close in FQ',
+                                    'zombie deal'
+                                    ))
+);
+
+
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP2" AS
+(
+SELECT BEST_ACCTSEGMENT_AT_CLOSE__SNW , TYPE, RPT_QTR, IMPUTED_STAGE,
+IFNULL("'pulled from FQ'",0)      as PULL_FROM_FQ,
+IFNULL("'pushed to NQ'",0)        as PUSHED_TO_NQ,
+IFNULL("'set and close in CQ'",0) as SETCLOSED_IN_CQ,
+IFNULL("'set to close in FQ'",0)  as SETCLOSED_IN_NQ,
+IFNULL("'zombie deal'",0)         as REVIVED_FROM_PQ
+FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP1"
+);
+
+CREATE OR REPLACE VIEW "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP3" as
+(
+
+SELECT *,
+//PULL_FROM_FQ+SETCLOSED_IN_CQ+REVIVED_FROM_PQ as CLOSED_IN_Q,
+//PULL_FROM_FQ+SETCLOSED_IN_CQ+REVIVED_FROM_PQ+ PUSHED_TO_NQ as DENOMINATOR,
+SETCLOSED_IN_CQ+REVIVED_FROM_PQ as CLOSED_IN_Q,
+SETCLOSED_IN_CQ+REVIVED_FROM_PQ+ PUSHED_TO_NQ as DENOMINATOR,
+DIV0(CLOSED_IN_Q,DENOMINATOR) as CLOSE_RATE,
+1-CLOSE_RATE as PUSH_RATE
+FROM  "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP2" 
+order by 3
+);
+
+CREATE OR REPLACE VIEW "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP4" as
+(
+
+SELECT BEST_ACCTSEGMENT_AT_CLOSE__SNW, TYPE, IMPUTED_STAGE, 
+          SUM(CLOSED_IN_Q) as SUM_CLOSED_IN_Q,
+          SUM(DENOMINATOR) as SUM_DENOMINATOR,
+          DIV0(SUM_CLOSED_IN_Q,SUM_DENOMINATOR) as CLOSE_RATE
+
+FROM          "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP3"
+          group by BEST_ACCTSEGMENT_AT_CLOSE__SNW, TYPE, IMPUTED_STAGE
+          order by  BEST_ACCTSEGMENT_AT_CLOSE__SNW, TYPE, IMPUTED_STAGE
+);              
+   
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SFDC_EBSTA_USER_EMAILS" as
+(
+
+SELECT * FROM 
+);         
+          
+          SELECT OPP_ID, NAME, TYPE,CLOSECATEGORY FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          WHERE QTR_FIRSTDAY >='10/1/2021'
+          and CLOSECATEGORY like '%pushed%'
+          group by 1,2,3,4;
+          
+          SELECT CURRENT_ACCTSEGMENT__SNW
+,t1.* ,t2.SALES_CREDIT_ARR__C
+          FROM
+          (
+          SELECT OPP_ID, NAME, TYPE,CLOSECATEGORY FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_PUSHANALYSIS_FINAL"
+          WHERE QTR_FIRSTDAY >='10/1/2021'
+          and CLOSECATEGORY like '%pushed%'
+          group by 1,2,3,4) t1
+          LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2
+          on t1.OPP_ID = t2.ID
+          WHERE SALES_CREDIT_ARR__C > 0
+          and CURRENT_ACCTSEGMENT__SNW in ('EE','LE')
+          order by 1, 6 desc
+          
+          ;
+          
+          SELECT 
