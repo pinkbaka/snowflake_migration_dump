@@ -1,0 +1,38 @@
+
+create or replace table  "MTL_LOAD_TEST"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C"
+as
+(
+    SELECT ROW_NUMBER ( )   
+    OVER (   order by id) as num, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C"
+ )
+ 
+ 
+;
+
+
+create or replace table  "CENSUS"."CENSUS"."TARGET_LDAN__LD_ENGAGEMENT__C"
+as
+(
+    SELECT ROW_NUMBER ( )   
+    OVER (   order by id) as num, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C"
+ )
+ 
+ 
+;
+
+
+
+SELECT * FROM   "MTL_LOAD_TEST"."PUBLIC"."TARGET_LDAN__LD_ENGAGEMENT__C" where num <1000000
+order by num;
+
+
+
+create or replace table  "MTL_LOAD_TEST"."PUBLIC"."CUSTOMER_USAGE_METRICS_HISTORY"
+as
+(
+    SELECT ROW_NUMBER ( )   
+    OVER (   order by id) as num, * FROM "LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY"
+ )
+ 
+ 
+;
