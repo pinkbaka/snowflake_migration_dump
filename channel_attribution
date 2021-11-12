@@ -1,0 +1,529 @@
+// Notes
+// - There should be a process around handling data hygeine on opps with multiple PC
+// - We should assign p1 p2 p3 in SFDC
+//    We can create a campaign field to handle this
+
+
+//      TABLE OF CONTENTS
+//      (TOC-1) - FIND NEW BIZ OPPS WITH PRIMARY CONTACTS 
+//      (TOC-2) - FIND OPPS WITH MULTIPLE PRIMARY CONTACTS
+//      (TOC-3) - KEEP OPPS WITH SINGLE PRIMARY CONTACTS
+
+//      (TOC-4) - FILTER CAMPAIGN MEMBERS FOR CREATEDATE AND TEST ACCTS 
+//      (TOC-5) - ASSIGN P STATUS TO CAMPAIGN MEMBERS
+
+
+//      (TOC-6) - CALCULATE DATE DELTA FOR DAYS IN STAGE
+
+
+set Opp_CutOffDate = '6/1/2020';
+set CampaignMember_ResponseCutOffDate = '4/1/2020';
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-1) - FIND NEW BIZZ OPPS WITH PRIMARY CONTACTS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+// Return a list of opportunities where the primary contact is populated
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+as(
+  SELECT t2.CONTACTID as primary_contact, isprimary, t1.* 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  left join  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYCONTACTROLE" t2            
+  on t1.ID = t2.OPPORTUNITYID
+  WHERE t2.isprimary = TRUE
+  AND TYPE = 'New Business'
+  and t1.createddate >= $Opp_CutOffDate
+  order by t1.ID, t2.contactid
+
+);
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1";
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-2) - FIND OPPS WITH MULTIPLE PRIMARY CONTACTS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+// count # of primary contacts on each opp
+//SELECT id, primary_contact, count(*) FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+//group by 1,2
+//order by count(*) desc;
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP2"
+as
+(
+    SELECT id, count(primary_contact) as ct
+    FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+    group by 1
+    order by count(*) desc
+);
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP2";
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-3) - KEEP OPPS WITH SINGLE PRIMARY CONTACTS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP3"
+as
+(
+    SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+    WHERE ID in (SELECT ID 
+                 FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP2"
+                 WHERE ct = 1)
+);
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-3) - JOIN OPP STAGE REACHED DATA @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_FINAL"
+as
+(
+SELECT PRIMARY_CONTACT, ISPRIMARY, ID, ACCOUNTID, NAME, STAGENAME, CLOSEDATE,CREATEDDATE,TYPE, ARR__C, NEW_ARR__C,
+  createddate as OPP_CREATEDDATE,
+  S0_REACHED,
+  S1_REACHED,
+  S2_REACHED,
+  S3_REACHED,
+  S4_REACHED,
+  S5_REACHED,
+  CW_REACHED,
+  CL_REACHED,
+  DQ_REACHED
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP3" t1
+  LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+  on t1.ID = t2.OPPORTUNITYID
+  );
+  
+SELECT 1 as rpt_order, '# of Opps ' as title, count(DISTINCT ID) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+UNION
+SELECT 2 as rpt_order, '# of Primary Contacts on Opps ' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP1"
+UNION
+SELECT 3 as rpt_order, '# of Opps with multiple or duplicates primary contacts ' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP2" t2 WHERE t2.ct=2
+UNION
+SELECT 4 as rpt_order, '# of Clean Opps ' as title, count(*) as ct FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_TMP3"
+order by rpt_order; 
+
+
+         
+// find all p1 Campaign members
+//
+// SELECT  
+//  '' as Marketing_PRank,
+//  t2.name as CampaignName
+// case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+// ,t3.name as ContactName
+// ,t1.name as CampaignMemberName
+// ,t1.createddate as CampaignMemberCreatedDate
+// ,t3.createddate as ContactCreatedDate
+// ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+// ,t1.Status
+// ,t3.LASTACTIVITYDATE
+// ,Campaign_Follow_Up_Needed__c
+// ,t1.ID as CampaignMemberID
+// ,t2.ID as CampaignID
+// ,t3.ID as ContactID
+//  ,t1.leadid
+//  ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+//  ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+//  ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+//  ,t1.CAMPAIGN_TERM_UTM_TERM__C
+//  ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+//  ,t2.type as CAMPAIGN_MEMBER_TYPE
+//  ,t2.CAMPAIGN_TYPE_GROUPING__C
+//  ,t4.name as AccountName
+//  ,t4.EMPLOYEE_BAND__C
+//  ,t4.CUSTOMER_START_DATE__C
+//  ,t4.Type as ACCOUNT_TYPE
+//FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+//on t1.CAMPAIGNID = t2.ID
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+//on t1.contactid = t3.id 
+//left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+//on t3.accountid = t4.id
+//WHERE t1.FIRSTRESPONDEDDATE >= $CampaignMember_ResponseCutOffDate
+//
+//and (t2.NAME like '%Contact Us%'
+//     or (
+//         t2.name like '%AppExchange'
+//            and t2.name like '%Demo%'
+//         )
+//-- filter duplicates out
+//or (t2.name in ('G2 Crowd - Demo Request', 'Web - G2 Crowd - Demo Request'))
+//or (t2.name like '%Demo Request%') )
+//and t2.NAME not in ('Web - Inquiry Demo Request SFDC AppExchange', 'Web - Inquiry Installs SFDC AppExchange')
+//order by 2,1
+//;
+//
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-4) - FILTER CAMPAIGN MEMBERS FOR CREATEDATE AND TEST ACCTS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP1"
+as
+(
+ SELECT  
+  --'' as Marketing_PRank,
+  t2.name as CampaignName
+  ,case when UPPER(t2.name) like '%DEMO%' or UPPER(t2.name) like '%CONTACT%' then 1 else 0 end as P1_Priority
+ ,t3.name as ContactName
+ ,t1.name as CampaignMemberName
+ ,t1.createddate as CampaignMemberCreatedDate
+ ,t3.createddate as ContactCreatedDate
+ ,t1.FIRSTRESPONDEDDATE CampaignMemberFirstResponseDate
+ ,t1.Status
+ ,t3.LASTACTIVITYDATE
+ ,Campaign_Follow_Up_Needed__c
+ ,t1.ID as CampaignMemberID
+ ,t2.ID as CampaignID
+ ,t3.ID as ContactID
+  ,t1.leadid
+  ,t1.CAMPAIGN_CONTENT_UTM_CONTENT__C
+  ,t1.CAMPAIGN_MEDIUM_UTM_MEDIUM__C
+  ,t1.CAMPAIGN_SOURCE_UTM_SOURCE__C
+  ,t1.CAMPAIGN_TERM_UTM_TERM__C
+  ,t1.CAMPAIGNID_UTM_CAMPAIGN__C
+  ,t2.type as CAMPAIGN_MEMBER_TYPE
+  ,t2.CAMPAIGN_TYPE_GROUPING__C
+  ,t4.name as AccountName
+  ,t4.EMPLOYEE_BAND__C
+  ,t4.CUSTOMER_START_DATE__C
+  ,t4.Type as ACCOUNT_TYPE
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGNMEMBER"t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CAMPAIGN" t2
+on t1.CAMPAIGNID = t2.ID
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CONTACT" t3
+on t1.contactid = t3.id 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t4
+on t3.accountid = t4.id
+WHERE
+    -- Exclude campaign members before the cut off date
+    t1.FIRSTRESPONDEDDATE >= $CampaignMember_ResponseCutOffDate
+    -- Exclude test accounts and LD Accounts
+    AND UPPER(ACCOUNTNAME) not like '%LEANDATA%'
+    AND UPPER(CONTACTNAME) not like '%LEANDATA%'
+    AND UPPER(CONTACTNAME) not like '%HOT DOG BRO%'
+    AND UPPER(CONTACTNAME) not like '%TEST%'
+    -- Exclude Campaign Members that cannot be associated with a primary contact
+    AND CONTACTID is not null
+order by 2,1
+);
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-5) - ASSIGN P STATUS TO CAMPAIGN MEMBERS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1A"
+as
+(
+  SELECT 'P1A' as Marketing_PRank, * 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP1"
+  WHERE
+       (
+          CampaignName like '%Contact Us%'
+          or (CampaignName like '%AppExchange' and CampaignName like '%Demo%')
+          or (CampaignName in ('G2 Crowd - Demo Request', 'Web - G2 Crowd - Demo Request'))
+          or (CampaignName like '%Demo Request%') 
+       )
+      -- filter duplicates out
+      and CampaignName not in ('Web - Inquiry Demo Request SFDC AppExchange', 
+                               'Web - Inquiry Installs SFDC AppExchange')
+);
+
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1B"
+as
+(
+  SELECT 'P2' as Marketing_PRank, * 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP1"
+  WHERE
+    CampaignName in ('Web - Inquiry Installs SFDC', 
+                     'Web - Inquiry Installs SFDC AppExchange - Engagement',
+                     '1810 SFDC AppExchange Installs')  
+);
+
+//SELECT CampaignMemberID, * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1B";
+//WHERE CampaignMemberID in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1A");
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P2"
+as
+(
+  SELECT 'P2' as Marketing_PRank, * 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP1"
+  WHERE
+    CampaignMemberID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1A")
+    and CampaignMemberID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1B")
+    and 
+        (
+        CampaignName like '%P2%'
+        OR (CAMPAIGN_MEMBER_TYPE = 'Appointment Setting' and Status in ('Meeting Occurred','Meeting Scheduled'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'ABM' and Status in ('Engaged'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Direct Mail' and Status in ('Delivered'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'eGift' and Status in ('Used'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Event - Field' and Status in ('Attended'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Event - Field Exec' and Status in ('Attended'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Event - Meeting' and Status in ('Scheduled'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Event - Session' and Status in ('Attended'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Event - Tradeshow' and Status in ('Visited Booth', 'Hot Lead'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Nurture' and Status in ('Engaged'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'OpsStars - Meeting' and Status in ('Scheduled'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Sponsored Webinar' and Status in ('Attended', 'Attended On-demand'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Virality' and Status in ('Engaged'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Virtual Event' and Status in ('Attended', 'Attended On-demand'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Web' and Status in ('Engaged'))
+        OR (CAMPAIGN_MEMBER_TYPE like 'Webinar' and Status in ('Attended', 'Attended On-demand'))
+        )
+
+);
+
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P2";
+
+
+
+CREATE OR REPLACE TABLE  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P3"
+as
+(
+  SELECT 'P3' as Marketing_PRank, * 
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP1"
+  WHERE
+    CampaignMemberID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1A")
+    and CampaignMemberID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1B")
+    and CampaignMemberID not in (SELECT CampaignMemberID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P2")
+);
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2"
+as 
+(
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1A"
+  UNION 
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P1B"
+  UNION 
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P2"
+  UNION 
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2_P3"
+);
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP3A"
+as 
+(
+  SELECT DISTINCT CONTACTID , MARKETING_PRANK, ct
+  FROM (
+  SELECT CONTACTID,CAMPAIGNID, MARKETING_PRANK, count(*) as ct
+  FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2"
+  group by 1,2,3
+  having count(*) > 1
+  order by count(*) desc)
+);
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP3"
+as 
+(
+  SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP2"
+  where contactid not in (SELECT CONTACTID FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP3A")
+);
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP4A"
+as (SELECT *,
+    case when CUSTOMER_START_DATE__C is null then TRUE
+     when date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) < date(CUSTOMER_START_DATE__C) then TRUE ELSE FALSE END as FirstRespondedBeforeCustomerStartDate
+    FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP3"
+    );
+    
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP4"
+as (SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP4A"
+    WHERE FirstRespondedBeforeCustomerStartDate = TRUE
+    );    
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5A"
+as (SELECT case when CAMPAIGNMEMBERFIRSTRESPONSEDATE > CREATEDDATE then TRUE ELSE FALSE END as CampaignInfluenceAfterOpp,
+            abs(date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) - date(CREATEDDATE)) as respondeddate_vs_oppcreation,
+           case when abs(date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) - date(CREATEDDATE)) > 60 then TRUE ELSE FALSE END as CampaignInfluenceOver60Days,
+           --case when CUSTOMER_START_DATE__C is null then TRUE
+            --    when date(CAMPAIGNMEMBERFIRSTRESPONSEDATE) < date(CUSTOMER_START_DATE__C) then TRUE ELSE FALSE END as FirstRespondedBeforeCustomerStartDate,
+   
+    * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_FINAL" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP4" t2
+  on t1.PRIMARY_CONTACT = t2.CONTACTID
+  where contactid is not null);
+ 
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_OPPS_FINAL";
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP4" t2;
+ 
+//Exclude the campaign members where the first responded date over 60 days before the opportuny is created
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5"
+as (
+    SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5A"
+        WHERE CampaignInfluenceOver60Days = FALSE
+        AND  CAMPAIGNINFLUENCEAFTEROPP = FALSE
+  );
+  
+  SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5";
+  
+
+  
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP6_FIRST"
+as (SELECT rank () over (partition by ID, CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE asc,CAMPAIGNMEMBERCREATEDDATE asc) as rank --p1_priority desc,
+                       , * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5");     
+                       
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP6_LAST"
+as (SELECT rank () over (partition by ID, CONTACTID order by CAMPAIGNMEMBERFIRSTRESPONSEDATE desc,CAMPAIGNMEMBERCREATEDDATE desc) as rank --p1_priority desc,
+                       , * FROM  "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP5");   
+                       
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_FIRST"
+as (SELECT * 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP6_FIRST"
+    WHERE rank = 1);     
+    
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_LAST"
+as (SELECT * 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP6_LAST"
+    WHERE rank = 1);     
+                                              
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_FIRST" ;                      
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_LAST" ;    
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."SNW_FIRST_LASTANALYSIS"
+AS
+(
+SELECT t1.*
+ ,t2.ID as ID_LAST
+ ,t2.PRIMARY_CONTACT as PRIMARY_CONTACT_LAST
+ ,t2.rank as rank_LAST
+ ,t2.CAMPAIGNINFLUENCEAFTEROPP as CAMPAIGNINFLUENCEAFTEROPP_LAST
+ ,t2.RESPONDEDDATE_VS_OPPCREATION as RESPONDEDDATE_VS_OPPCREATION_LAST
+ ,t2.CAMPAIGNINFLUENCEOVER60DAYS as CAMPAIGNINFLUENCEOVER60DAYS_LAST
+ ,t2.STAGENAME as STAGENAME_LAST
+ ,t2.CLOSEDATE as CLOSEDATE_LAST
+ ,t2.CREATEDDATE as CREATEDDATE_LAST
+ ,t2.MARKETING_PRANK as MARKETING_PRANK_LAST
+ ,t2.CAMPAIGNNAME as CAMPAIGNNAME_LAST
+ ,t2.P1_PRIORITY as P1_PRIORITY_LAST
+ ,t2.CAMPAIGNMEMBERCREATEDDATE as CAMPAIGNMEMBERCREATEDDATE_LAST
+ ,t2.CONTACTCREATEDDATE as CONTACTCREATEDDATE_LAST
+ ,t2.CAMPAIGNMEMBERFIRSTRESPONSEDATE as CAMPAIGNMEMBERFIRSTRESPONSEDATE_LAST
+ --,STATUS as STATUS2
+ ,t2.CAMPAIGNMEMBERID as CAMPAIGNMEMBERID_LAST
+ ,t2.CAMPAIGNID as CAMPAIGNID_LAST
+ ,t2.Campaign_Source_Utm_Source__C as Campaign_Source_Utm_Source__C_LAST
+ ,t2.CAMPAIGN_CONTENT_UTM_CONTENT__C as CAMPAIGN_CONTENT_UTM_CONTENT__C_LAST
+ ,t2.CAMPAIGN_MEDIUM_UTM_MEDIUM__C as CAMPAIGN_MEDIUM_UTM_MEDIUM__C_LAST
+ ,t2.CAMPAIGN_TERM_UTM_TERM__C as CAMPAIGN_TERM_UTM_TERM__C_LAST
+ ,t2.CAMPAIGNID_UTM_CAMPAIGN__C as CAMPAIGNID_UTM_CAMPAIGN__C_LAST
+ ,t2.CAMPAIGN_MEMBER_TYPE as CAMPAIGN_MEMBER_TYPE_LAST
+ ,t2.CAMPAIGN_TYPE_GROUPING__C as CAMPAIGN_TYPE_GROUPING__C_LAST
+FROM "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_FIRST" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."MKTG_CHANNEL_ATTRIBUTION_CAMPAIGNMEMBER_TMP7_LAST" t2
+ON  t1.ID = t2.ID
+and t1.PRIMARY_CONTACT = t2.PRIMARY_CONTACT
+);
+
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FIRST_LASTANALYSIS";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP1"
+AS
+(
+
+  SELECT 
+  case when t1.OPP_BESTRELATIONSHIP_CREATIONROLE__SNW is null then CREATED_BY_ROLE__C else OPP_BESTRELATIONSHIP_CREATIONROLE__SNW end as REVOPS_SALES_ROLE,
+  case when t1.ID in (SELECT ID FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FIRST_LASTANALYSIS" ) THEN TRUE ELSE FALSE END as MKTG_INFLUENCED,  
+  t2.CAMPAIGN_MEMBER_TYPE as CAMPAIGN_MEMBER_TYPE_FIRST,
+  t2.CAMPAIGN_MEMBER_TYPE_LAST,
+  t2.PRIMARY_CONTACT as PRIMARY_CONTACT_FIRST,
+  t2.PRIMARY_CONTACT_LAST,
+  t2.CAMPAIGNNAME_LAST,
+  t2.CAMPAIGNNAME as CAMPAIGNNAME_FIRST,
+  t2.CAMPAIGNID as CAMPAIGNID_FIRST,
+  t2.CAMPAIGNID_LAST,
+  t1.*
+
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  LEFT JOIN  "MTL_LOAD_PRE"."PUBLIC"."SNW_FIRST_LASTANALYSIS" t2
+  on t1.id = t2.id
+  WHERE
+      t1.TYPE = 'New Business'
+      and t1.createddate >= $Opp_CutOffDate
+  order by 1
+
+);
+
+SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP1";
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP2"
+AS
+(
+SELECT case when OPPORTUNITY_SOURCE__C <> 'Partner' and MKTG_INFLUENCED = FALSE then REVOPS_SALES_ROLE END as tmp1,
+case 
+    when (tmp1 like '%AE%' OR tmp1 like '%AM%')
+         OR tmp1 IN ( 'Manager - Emerging Commercial Sales',
+                 'Manager - Mid Market Sales'
+               )  THEN 'Sales'
+    WHEN tmp1 like '%SDR%' THEN 'SDR'
+    WHEN tmp1 is null THEN 'Null'
+    else 'OTHER'
+    END as ATTRIBUTION_CHANNEL_TMP,
+    * FROM  "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP1"
+);
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP2";
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP3"
+AS
+(
+SELECT case when MKTG_INFLUENCED = TRUE THEN 'Marketing'
+            when OPPORTUNITY_SOURCE__C = 'Partner' then 'Partner'
+            else ATTRIBUTION_CHANNEL_TMP
+            end as REVOPS_ATTRIBUTION_CHANNEL,
+       *
+FROM "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP2"
+);
+
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP3";
+
+SELECT REVOPS_ATTRIBUTION_CHANNEL,
+       CAMPAIGN_MEMBER_TYPE_FIRST,
+            count(*)
+FROM "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP3"
+group by 1,2
+order by 1,2;
+
+
+SELECT ID,REVOPS_ATTRIBUTION_CHANNEL, CAMPAIGN_MEMBER_TYPE_FIRST,NAME, 
+
+CAMPAIGN_MEMBER_TYPE_FIRST,
+CAMPAIGN_MEMBER_TYPE_LAST,
+PRIMARY_CONTACT_FIRST,
+PRIMARY_CONTACT_LAST,
+CAMPAIGNNAME_FIRST,
+CAMPAIGNNAME_LAST,
+case when CAMPAIGNID_FIRST = CAMPAIGNID_LAST then TRUE else FALSE end as SAME_FIRST_LAST_CAMPAIGN,
+TYPE,  CREATEDDATE,REVOPS_SALES_ROLE,OPPORTUNITY_SOURCE__C,stagename,
+  S0_REACHED,
+  S1_REACHED,
+  S2_REACHED,
+  S3_REACHED,
+  S4_REACHED,
+  S5_REACHED,
+  CW_REACHED,
+  CL_REACHED,
+  DQ_REACHED
+FROM "MTL_LOAD_PRE"."PUBLIC"."CHANNEL_ATTRIBUTION_ANALYSIS_TMP3" t1
+  LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+  on t1.ID = t2.OPPORTUNITYID;
+
