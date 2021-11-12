@@ -1,0 +1,52 @@
+USE "PC_MATILLIONLOADER_DB";
+
+
+
+CREATE or replace PROCEDURE usp_ETL_MTLLOADPRE_ENABLE_USERS()
+  RETURNS VARCHAR
+  LANGUAGE javascript
+  EXECUTE AS OWNER
+  AS
+  $$
+  
+//    var sql_command = `use role SECURITYADMIN`;
+//    var statement = snowflake.createStatement( {sqlText: sql_command} );
+//    var result_set = statement.execute();
+   
+    var sql_command = `grant usage on database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on all schemas in database MTL_LOAD_PRE  to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on all tables in database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+   
+        
+    var sql_command = `grant all privileges on future schemas in database MTL_LOAD_PRE  to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+    var sql_command = `grant all privileges on future tables in database MTL_LOAD_PRE to role SYSADMIN`;
+    var statement = snowflake.createStatement( {sqlText: sql_command} );
+    var result_set = statement.execute();
+    
+  return 'Done.';
+  $$;
+
+CALL usp_ETL_MTLLOADPRE_ENABLE_USERS();
+
+
+use role ACCOUNTADMIN;
+grant usage on database "MTL_LOAD_PRE" to role SYSADMIN;
+
+--grant CREATE on database "MTL_LOAD_PRE" to role SYSADMIN;
+grant all privileges on all schemas in database MTL_LOAD_PRE  to role SYSADMIN;
+grant all privileges on all tables in database MTL_LOAD_PRE to role SYSADMIN;
+grant usage on all tables in database MTL_LOAD_PRE to role SYSADMIN;
+
+grant all privileges on future schemas in database MTL_LOAD_PRE  to role SYSADMIN;
+grant all privileges on future tables in database MTL_LOAD_PRE to role SYSADMIN;
