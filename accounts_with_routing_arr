@@ -1,0 +1,106 @@
+
+// accounts with routing arr
+with 
+base_table as (
+  SELECT t1.ID as opportunity_id, 
+  t1.NAME as opportunity_name, 
+  SBQQ__PRIMARYQUOTE__C,
+  t2.NAME as quote_line_name,
+  SBQQ__PRODUCT__C,
+  SBQQ__PRODUCTNAME__C,
+  SBQQ__PRODUCTFAMILY__C,
+  QUOTE_LINE_ARR__C,
+  ACCOUNTID, t3.NAME as ACCOUNT_NAME
+
+  from "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"t2
+  on t1.SBQQ__PRIMARYQUOTE__C = t2.SBQQ__QUOTE__C
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"t3
+  on t1.ACCOUNTID = t3.ID
+  where stagename = 'Closed Won'
+  and t1.type in ('New Business','Upsell','Renewal')
+  and SBQQ__PRODUCTFAMILY__C = 'Router'
+  and QUOTE_LINE_ARR__C is not null
+  and t1.CONTRACT_START_DATE__C <= current_date
+  and t1.CONTRACT_END_DATE__C > current_date
+  and EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+  )
+  
+SELECT ACCOUNTID, ACCOUNT_NAME, SBQQ__PRODUCTFAMILY__C, sum(QUOTE_LINE_ARR__C)
+from base_table
+group by 1,2,3
+;
+
+// checking the sum 
+with 
+base_table as (
+  SELECT t1.ID as opportunity_id, 
+  t1.NAME as opportunity_name, 
+  SBQQ__PRIMARYQUOTE__C,
+  t2.NAME as quote_line_name,
+  SBQQ__PRODUCT__C,
+  SBQQ__PRODUCTNAME__C,
+  SBQQ__PRODUCTFAMILY__C,
+  QUOTE_LINE_ARR__C,
+  ACCOUNTID, t3.NAME as ACCOUNT_NAME
+
+  from "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"t2
+  on t1.SBQQ__PRIMARYQUOTE__C = t2.SBQQ__QUOTE__C
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"t3
+  on t1.ACCOUNTID = t3.ID
+  where stagename = 'Closed Won'
+  and t1.type in ('New Business','Upsell','Renewal')
+  and SBQQ__PRODUCTFAMILY__C = 'Router'
+  and QUOTE_LINE_ARR__C is not null
+  and t1.CONTRACT_START_DATE__C <= current_date
+  and t1.CONTRACT_END_DATE__C > current_date
+  and EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+  )
+  
+SELECT sum(QUOTE_LINE_ARR__C)
+from base_table
+;
+
+
+
+
+
+
+SELECT 
+
+
+sum(QUOTE_LINE_ARR__C)
+
+from "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"t2
+on t1.SBQQ__PRIMARYQUOTE__C = t2.SBQQ__QUOTE__C
+where stagename = 'Closed Won'
+and type in ('New Business','Upsell','Renewal')
+and SBQQ__PRODUCTFAMILY__C <> 'Services'
+and CONTRACT_START_DATE__C <= current_date
+and CONTRACT_END_DATE__C > current_date
+and EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+;
+
+SELECT 
+
+
+sum(QUOTE_LINE_ARR__C)
+
+from "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"t2
+on t1.SBQQ__PRIMARYQUOTE__C = t2.SBQQ__QUOTE__C
+where stagename = 'Closed Won'
+and type in ('New Business','Upsell','Renewal')
+and SBQQ__PRODUCTNAME__C = 'LD One Time Discount'
+and CONTRACT_START_DATE__C <= current_date
+and CONTRACT_END_DATE__C > current_date
+and EXCLUDE_FROM_ARR_CALCULATION__C = FALSE
+;
+
+
+
+select SBQQ__PRODUCTFAMILY__C, SBQQ__PRODUCTNAME__C,SBQQ__PRODUCT__C FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"
+group by 1,2,3
+order by 1,2,3;
