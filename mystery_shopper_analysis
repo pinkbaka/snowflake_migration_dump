@@ -1,0 +1,390 @@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."CSAT_Crosscheck_TMP"
+as 
+(
+
+);
+
+// Transforms Starts here
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustOverlaptmp1"
+as 
+(
+  SELECT case when "Corrected Name" is not null then "Corrected Name" else "Account" end as Account,
+  "Population" as Population, "Account" as "Data_Acct_Raw", "SFDC ID Account ID"
+  FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustSFDC_IDs"
+  order by Population, Account
+);
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustOverlaptmp1";
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp1"
+as 
+  (
+      SELECT "Company" as Company,* 
+      FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp" t1
+      left JOIN "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustOverlaptmp1" t2
+      ON t1."Company" = t2.Account
+      group by 1,2,3,4,5,6,7,8,9,10,11,12,13 
+   );
+   
+   
+   SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp1";
+   
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp2"
+as 
+  (  
+  SELECT *,
+    case when Population like '%Customer%' 
+            then TRUE 
+            else FALSE end as isLeanDataCust,
+    case when "Email Response Time" is not null
+            then TRUE
+            else FALSE end as hasEmailResponse,
+    case when "Call Response Time" is not null
+            then true
+            else False end as hasCallResponse,
+    case when "Email Response Time" is not null or "Call Response Time" is not null
+            then TRUE
+            else FALSE end as hasResponse,
+     "Email Response Time" * 3600 as EmailRespSeconds,  
+     "Call Response Time" * 3600 as CallRespSeconds,
+     "Email Response Time" * 60 as EmailRespMinutes,  
+     "Call Response Time" * 60 as CallRespMinutes,
+    case when "Number of Employees" < 251 then 'EC'
+         when "Number of Employees" >= 251 and "Number of Employees" < 1001  then 'MM'
+         when "Number of Employees" >= 1001 and "Number of Employees" < 4501  then 'EE'
+         when "Number of Employees" >= 4501 then 'LE'
+         end as Account_Segment,
+    case when "Email Response Time" > 100 or "Call Response Time" > 100 then TRUE else FALSE end as ResponseOutlier,
+    case when "Email Response Time" = 0 then TRUE else FALSE end as PossibleEmailAutomation
+  FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp1"
+  --where isLeanDataCust = TRUE
+);
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp2";
+   
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp3"
+as 
+  (  
+SELECT t1.* 
+    ,Users_In_Contract__c
+    ,Lead_Routing__c
+    ,Contact_Routing__c
+    ,Account_Routing__c
+    ,Opportunity_Routing__c
+    ,Matching__c
+    ,Attribution__c
+    ,Engagement__c
+    ,View__c
+    ,Matching_API_del__c
+    ,API__c
+    ,FlowBuilder_Integrations__c
+    ,Customer_Level__c
+    ,Product_Sync_Date__c
+   
+FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp2" t1
+LEFT JOIN  "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+on t1."SFDC ID Account ID" = t2.ID
+);
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp3";
+
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned"
+as
+(
+    SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_MystShop_tmp3"
+);
+
+
+SELECT "Population", count(*) 
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustOverlap"
+group by 1;
+//SELECT "Company", count("Company") FROM
+//(
+//    SELECT * 
+//    FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp" t1
+//    LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."MystShop_CustOverlap" t2
+//    ON t1."Company" = t2."Account"
+//)
+//group by "Company"
+//order by count("Company") desc
+//;;
+
+SELECT id, name, type, FLOWBUILDER_INTEGRATIONS__C, SALESLOFT_FOR_SALES_OPS__C FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"
+where FLOWBUILDER_INTEGRATIONS__C is not null --or SALESLOFT_FOR_SALES_OPS__C is not null;
+
+;
+SELECT *
+FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned"
+WHERE ISLEANDATACUST = FALSE AND
+      HASEMAILRESPONSE = FALSE;
+      
+      SELECT Company,
+       ISLEANDATACUST,
+       ACCOUNT_SEGMENT,
+       HASEMAILRESPONSE,
+       HASCALLRESPONSE,
+       ISLEANDATACUST,
+       Population
+FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned"
+WHERE ISLEANDATACUST = FALSE AND
+      HASEMAILRESPONSE = FALSE;
+      
+      
+      
+Write a join between the 
+"MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp" table
+and the "TABLEAU_REPORTING"
+"MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT"
+attempt join on  Website_Domain_Only__c from "TARGET_ACCOUNT"
+and "Company Website" from "MystShop_LeadResp"
+
+https://www.w3schools.com/sql/func_sqlserver_left.asp
+https://www.w3schools.com/sql/func_sqlserver_right.asp
+
+;
+
+SELECT WEBSITE_DOMAIN_ONLY__C,
+       "Company Website",
+,RIGHT('Company Website', 4) AS ExtractString
+//SELECT LEFT ('Company Website', 4) AS ExtractString
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp" t1
+full outer join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+ON t1."Company Website" = t2.WEBSITE_DOMAIN_ONLY__C;
+
+
+SELECT
+"Company Website",
+left("Company Website", LEN("Company Website") -4),
+right("Company Website", LEN("Company Website") -4),
+left(right("Company Website", LEN("Company Website") -4), LEN(right("Company Website", LEN("Company Website") -4)) -4),
+
+right("Company Website", LEN("Company Website") -4) as pt1_cut4FromRightSide,
+left(pt1_cut4FromRightSide, LEN(pt1_cut4FromRightSide) -4) as pt2_cut4FromLeftSide
+
+
+--MID("Company Website"), 4++) AS ExtractString
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp";
+
+
+
+SELECT -- WEBSITE_DOMAIN_ONLY__C,
+right("Company Website", LEN("Company Website") -4) as pt1_cut4FromRightSide,
+left(pt1_cut4FromRightSide, LEN(pt1_cut4FromRightSide) -4) as pt2_cut4FromLeftSide
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+ON t1."Company Website" = t2.WEBSITE_DOMAIN_ONLY__C;
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp_Domains"
+as 
+(
+  SELECT
+  *,
+  right("Company Website", LEN("Company Website") -4) as pt1_cut4FromRightSide,
+  left(pt1_cut4FromRightSide, LEN(pt1_cut4FromRightSide) -4) as clean_domain
+  FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp"
+);
+
+SELECT t2.name as company_name,ACCOUNTPROFILEFIT6SENSE__C, *  
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp_Domains" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+ON t1.clean_domain = t2.WEBSITE_DOMAIN_ONLY__C
+order by t2.name;
+
+
+
+SELECT t2.name as company_name,ACCOUNTPROFILEFIT6SENSE__C, *  
+FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp_Domains" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+ON t1.clean_domain = t2.WEBSITE_DOMAIN_ONLY__C
+order by t2.name;
+
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."AcctRoutingFeatures"
+as
+(
+  SELECT * 
+  FROM
+  (
+    SELECT 'Acct' as routing_object, "Org Name", "Org Id", "Date", 
+
+        rank() over (
+            PARTITION by "Org Id"
+            order by  "Date" desc ) as rank,
+    "ACTION Round Robin", "PARTNER ACTION Slack - Send Notification",
+     NULL as  "PARTNER ACTION Salesloft - Add to Cadence",
+     NULL as  "PARTNER ACTION Outreach - Add to Sequence"
+
+    FROM"MTL_LOAD_TEST"."PUBLIC"."AcctRouting"
+  )
+  where rank = 1
+);
+
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."CaseRoutingFeatures"
+as
+(
+  SELECT * 
+  FROM
+  (
+    SELECT 'Case' as routing_object, "Org Name", "Org Id", "Date", 
+
+        rank() over (
+            PARTITION by "Org Id"
+            order by  "Date" desc ) as rank,
+    "ACTION Round Robin", "PARTNER ACTION Slack - Send Notification",
+       NULL as  "PARTNER ACTION Salesloft - Add to Cadence",
+     NULL as  "PARTNER ACTION Outreach - Add to Sequence"
+    FROM"MTL_LOAD_TEST"."PUBLIC"."CaseRouting"
+  )
+  where rank = 1
+);
+
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."OppRoutingFeatures"
+as
+(
+  SELECT * 
+  FROM
+  (
+    SELECT 'Opp' as routing_object, "Org Name", "Org Id", "Date", 
+
+        rank() over (
+            PARTITION by "Org Id"
+            order by  "Date" desc ) as rank,
+    "ACTION Round Robin", "PARTNER ACTION Slack - Send Notification",
+       NULL as  "PARTNER ACTION Salesloft - Add to Cadence",
+     NULL as  "PARTNER ACTION Outreach - Add to Sequence"
+    FROM"MTL_LOAD_TEST"."PUBLIC"."OppRouting"
+  )
+  where rank = 1
+);
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."ContactRoutingFeatures"
+as
+(
+  SELECT * 
+  FROM
+  (
+    SELECT 'Contact' as routing_object, "Org Name", "Org Id", "Date", 
+
+        rank() over (
+            PARTITION by "Org Id"
+            order by  "Date" desc ) as rank,
+    "ACTION Round Robin", "PARTNER ACTION Slack - Send Notification",
+    "PARTNER ACTION Salesloft - Add to Cadence",
+    "PARTNER ACTION Outreach - Add to Sequence"
+
+    FROM"MTL_LOAD_TEST"."PUBLIC"."ContactRouting"
+  )
+  where rank = 1
+);
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."LeadRoutingFeatures"
+as
+(
+  SELECT * 
+  FROM
+  (
+    SELECT 'Lead' as routing_object, "Org Name", "Org Id", "Date", 
+
+        rank() over (
+            PARTITION by "Org Id"
+            order by  "Date" desc ) as rank,
+    "ACTION Round Robin", "PARTNER ACTION Slack - Send Notification",
+    "PARTNER ACTION Salesloft - Add to Cadence",
+    "PARTNER ACTION Outreach - Add to Sequence"
+
+    FROM"MTL_LOAD_TEST"."PUBLIC"."LeadRouting"
+  )
+  where rank = 1
+);
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."GroupedRoutingFeatures"
+as
+(
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."AcctRoutingFeatures"
+  UNION
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."CaseRoutingFeatures"
+  UNION
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OppRoutingFeatures"
+  UNION
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."ContactRoutingFeatures"
+  UNION
+  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."LeadRoutingFeatures"
+  order by "Org Name"
+);
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."GroupedRoutingFeatures"
+order by "Org Name";
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."OrgGroupedRoutingFeatures"
+as
+(
+SELECT 
+"Org Name" as OrgName, "Org Id" as OrgId,    
+IFNULL(MAX("ACTION Round Robin"), 0) as MAX_RR,
+IFNULL(MAX("PARTNER ACTION Slack - Send Notification"), 0) as MAX_Slack,
+IFNULL(MAX("PARTNER ACTION Salesloft - Add to Cadence"), 0) as MAX_Salesloft,
+IFNULL(MAX("PARTNER ACTION Outreach - Add to Sequence"), 0) as MAX_Outreach
+FROM  "MTL_LOAD_TEST"."PUBLIC"."GroupedRoutingFeatures"
+group by "Org Name", "Org Id"
+);
+
+Create or replace table  "MTL_LOAD_TEST"."PUBLIC"."RPT_OrgRoutingFeatures"
+as
+(
+  SELECT OrgName, OrgId,ACCOUNT__C, MAX_RR, MAX_Slack, MAX_Salesloft, MAX_Outreach,
+  case when MAX_RR > 0 then TRUE else FALSE end as hasRR,
+  case when MAX_Slack > 0 then TRUE else FALSE end as hasSlack,
+  case when MAX_Salesloft > 0 then TRUE else FALSE end as hasSalesloft,
+  case when MAX_Outreach > 0 then TRUE else FALSE end as hasOutreach,
+  case when MAX_RR > 0 then 1 else 0 end as ct_RR,
+  case when MAX_Slack > 0 then 1 else 0 end as  ct_Slack,
+  case when MAX_Salesloft > 0 then 1 else 0 end as  ct_Salesloft,
+  case when MAX_Outreach > 0 then 1 else 0 end as  ct_Outreach
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OrgGroupedRoutingFeatures" t1
+  left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_CUSTOMER_ORGANIZATION__C" t2
+  on t1.OrgId = t2.SUBSCRIBER_ORGANIZATION_ID__C
+  left join 
+  
+);
+
+SELECT ACCOUNT_ID_15_TO_18__C,id FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" limit 100;
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."RPT_OrgRoutingFeatures"
+as
+(
+    SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."RPT_OrgRoutingFeatures"
+);
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned_tmp1"
+as
+(
+SELECT *
+FROM  "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned" t1
+left join "TABLEAU_REPORTING"."PUBLIC"."RPT_OrgRoutingFeatures" t2
+on t1."SFDC ID Account ID" = t2.account__C
+where ISLEANDATACUST
+order by company
+);
+
+SELECT * FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned_tmp1";
+
+
+SELECT "SFDC ID Account ID", ACCOUNT,
+Account_Segment, max(hasRR) as hasRR
+
+FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned_tmp1"
+group by  "SFDC ID Account ID", ACCOUNT,
+Account_Segment;
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."MystShop_LeadResp_Domains";
+
+
+SELECT * FROM "TABLEAU_REPORTING"."PUBLIC"."SNW_MystShop_Cleaned";
