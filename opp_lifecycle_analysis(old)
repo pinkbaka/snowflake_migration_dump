@@ -1,0 +1,448 @@
+//      TABLE OF CONTENTS
+//      (TOC-1 ) - CREATE BASE OPP_STAGE_LIFECYCLE
+//      (TOC-2 ) - CHECK OPPORTUNITY STAGE NAMES
+//      (TOC-3 ) - FIND OPPS WITH UNWANTED STAGENAMES
+//      (TOC-4 ) - EXCLUDE OPPS WITH UNWANTED STAGE FROM BASE
+//      (TOC-5 ) - OFFSET MINIMUM CREATE DATE BY STAGE
+//      (TOC-6 ) - CALCULATE DATE DELTA FOR DAYS IN STAGE
+
+//      (TOC-7 ) - PIVOT ON MEDIAN DAYS IN STAGE BY SEGMENT
+//          (TOC-7A) - SUM PIVOT TO FIND MED DAYS OPEN AND CLOSE
+//          (TOC-7B) - SETUP MEDIAN DAYS OPEN TO BE UNPIVOTED
+//          (TOC-7C) - UNPIVOT MEDIAN DAYS OPEN
+//          (TOC-7D) - SETUP MEDIAN DAYSTO CLOSE TO BE UNPIVOTED 
+//          (TOC-7E) - UNPIVOT  MEDIAN DAYS TO CLOSE
+
+//      (TOC-8 ) - UNPIVOT MEDIAN DAYS IN STAGE BY SEGMENT
+//          (TOC-8A) - SUMMARIZE MEDIAN DAYS CALCULATIONS 
+//.     (TOC-9 ) - FIND # OF DAYS AN OPP HAS BEEN IN STAGE 
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-1) - CREATE BASE OPP_STAGE_LIFECYCLE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+// Join the opportunity and opportunity History table from 2020 going forward
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+AS
+(
+    SELECT t1.ID, t1.name, t2.STAGENAME as oppstage,
+    t2.CREATEDDATE, t1.CLOSEDATE, t1.type, t1.isclosed,
+  CURRENT_ACCTSEGMENT__SNW,  t1.STAGENAME
+  --,    * 
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+    on t1.id = t2.OPPORTUNITYID
+    WHERE t1.CLOSEDATE >= '1/1/2020'
+    order by t1.ID, t2.CREATEDDATE
+);
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-2) - CHECK OPPORTUNITY STAGE NAMES @@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+SELECT  t2.STAGENAME
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+on t1.id = t2.OPPORTUNITYID
+WHERE t1.CLOSEDATE >= '1/1/2020'
+group by  1;
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-3) - FIND OPPS WITH UNWANTED STAGENAMES @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+// return ID's of opps with unwanted stage convention
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES"
+as
+(
+    SELECT t1.ID --t2.STAGENAME
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1 
+    LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+    on t1.id = t2.OPPORTUNITYID
+    WHERE t2.STAGENAME IN  ('1 First Call', '2 Discovery', '3 Business Case', '4 Product Validation', '5 Proposal',
+                        'Stage 6: SOW Complete','Stage 4: SOW Signed', '6 Contract Signed','Stage 3: Validation',
+                        'Trial - Completed', 'Trial - Active', 'Demo',
+                            'Stage 2: In Active Scope',
+                            'Stage 5: SOW Execution')
+    group by t1.ID
+    order by t1.ID
+);
+
+//SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES";
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-4) - EXCLUDE OPPS WITH UNWANTED STAGE FROM BASE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+as
+(
+  SELECT  ID, NAME, OPPSTAGE, TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename
+  , MIN(CREATEDDATE) as MIN_CREATEDATE
+  FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_STAGE_LIFECYCLE"
+  WHERE ID not in (SELECT ID FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_DIFF_STAGENAMES")
+  group by ID, NAME, OPPSTAGE,  TYPE, ISCLOSED ,CURRENT_ACCTSEGMENT__SNW, stagename
+  order by  ID, NAME,  MIN(CREATEDDATE) 
+);
+
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+ORDER BY ID, OPPSTAGE;
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-5) - OFFSET MINIMUM CREATE DATE BY STAGE @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+as
+(
+    SELECT *,
+    lag(MIN_CREATEDATE) over (partition by ID order by NAME, MIN_CREATEDATE desc) as date_offset
+    FROM  "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGES(CLEANED)"
+    order by   ID, NAME, MIN_CREATEDATE desc
+);
+  
+// test query for example  
+//  SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+//  where ID = '0065A00001cmpDlQAI' ;
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-6) - CALCULATE DATE DELTA FOR DAYS IN STAGE @@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+ CREATE OR REPLACE VIEW "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+ as 
+ (
+    SELECT *,
+    date(DATE_OFFSET) as Offset_date,  date(MIN_CREATEDATE) as min_createddate ,
+    date(DATE_OFFSET) - date(MIN_CREATEDATE) as days_in_stage
+    FROM "MTL_LOAD_TEST"."PUBLIC"."OPPS_WITH_STAGE_OFFSET"
+ );
+  
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7) - PIVOT ON MEDIAN DAYS IN STAGE BY SEGMENT @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//////// THIS ONE IS GOOD
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+as
+(
+SELECT * 
+  FROM
+  (SELECT CURRENT_ACCTSEGMENT__SNW,OPPSTAGE,DAYS_IN_STAGE--, * 
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+  WHERE TYPE = 'New Business' 
+    AND STAGENAME = 'Closed Won'
+    and OPPSTAGE in ('Stage 0: First Call',
+                     'Stage 1: Initial Engagement',
+                     'Stage 2: Discovery',
+                     'Stage 3: Business & Solution Alignment',
+                     'Stage 4: Validation',
+                     'Stage 5: Negotiation'))
+        PIVOT(Median(DAYS_IN_STAGE) for OPPSTAGE in ('Stage 0: First Call',
+                                                     'Stage 1: Initial Engagement',
+                                                     'Stage 2: Discovery',
+                                                     'Stage 3: Business & Solution Alignment',
+                                                     'Stage 4: Validation',
+                                                     'Stage 5: Negotiation')) as p
+);
+// test data
+
+
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7A) - SUM PIVOT TO FIND MED DAYS OPEN AND CLOSE @@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+as
+(
+SELECT 
+*
+,cast("'Stage 0: First Call'" as DOUBLE) as S0
+,cast("'Stage 1: Initial Engagement'" as DOUBLE)  as S1
+,cast("'Stage 2: Discovery'" as DOUBLE)  as S2
+,cast("'Stage 3: Business & Solution Alignment'" as DOUBLE)  as S3
+,cast("'Stage 4: Validation'" as DOUBLE)  as S4
+,cast("'Stage 5: Negotiation'" as DOUBLE)  as S5
+,S0 as S0_MEDIAN_DAYS_OPEN
+,S0+S1 as S1_MEDIAN_DAYS_OPEN
+,S0+S1+S2 as S2_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3 as S3_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4 as S4_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4+S5 as S5_MEDIAN_DAYS_OPEN
+,S0+S1+S2+S3+S4+S5 as S0_MEDIAN_DAYS_TO_CLOSE
+,S1+S2+S3+S4+S5 as S1_MEDIAN_DAYS_TO_CLOSE
+,S2+S3+S4+S5 as S2_MEDIAN_DAYS_TO_CLOSE
+,S3+S4+S5 as S3_MEDIAN_DAYS_TO_CLOSE
+,S4+S5 as S4_MEDIAN_DAYS_TO_CLOSE
+,S5 as S5_MEDIAN_DAYS_TO_CLOSE
+FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT"
+);
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7B) - SETUP MEDIAN DAYS OPEN TO BE UNPIVOTED @@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+as
+(
+SELECT 
+  CURRENT_ACCTSEGMENT__SNW
+,S0_MEDIAN_DAYS_OPEN AS "Stage 0: First Call"
+,S1_MEDIAN_DAYS_OPEN AS "Stage 1: Initial Engagement"
+,S2_MEDIAN_DAYS_OPEN AS "Stage 2: Discovery"
+,S3_MEDIAN_DAYS_OPEN AS "Stage 3: Business & Solution Alignment"
+,S4_MEDIAN_DAYS_OPEN AS "Stage 4: Validation"
+,S5_MEDIAN_DAYS_OPEN AS "Stage 5: Negotiation"
+
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN";
+ 
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7C) - UNPIVOT MEDIAN DAYS OPEN @@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT"
+as
+(
+select CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_OPEN_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN"
+    unpivot(MEDIAN_DAYS_OPEN_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                            "Stage 1: Initial Engagement",
+                            "Stage 2: Discovery",
+                            "Stage 3: Business & Solution Alignment",
+                            "Stage 4: Validation",
+                            "Stage 5: Negotiation"))
+);
+                            
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7D) - SETUP MEDIAN DAYS TO CLOSE TO BE UNPIVOTED @@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@                            
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+as
+(
+SELECT 
+  CURRENT_ACCTSEGMENT__SNW
+,S0_MEDIAN_DAYS_TO_CLOSE AS "Stage 0: First Call"
+,S1_MEDIAN_DAYS_TO_CLOSE AS "Stage 1: Initial Engagement"
+,S2_MEDIAN_DAYS_TO_CLOSE AS "Stage 2: Discovery"
+,S3_MEDIAN_DAYS_TO_CLOSE AS "Stage 3: Business & Solution Alignment"
+,S4_MEDIAN_DAYS_TO_CLOSE AS "Stage 4: Validation"
+,S5_MEDIAN_DAYS_TO_CLOSE AS "Stage 5: Negotiation"
+
+  FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2"
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE";
+ 
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-7E) - UNPIVOT  MEDIAN DAYS TO CLOSE @@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT"
+as
+(
+select CURRENT_ACCTSEGMENT__SNW, OPPSTAGE, MEDIAN_DAYS_TOCLOSE_BYSTAGE from  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE"
+    unpivot(MEDIAN_DAYS_TOCLOSE_BYSTAGE for OPPSTAGE in ("Stage 0: First Call",
+                            "Stage 1: Initial Engagement",
+                            "Stage 2: Discovery",
+                            "Stage 3: Business & Solution Alignment",
+                            "Stage 4: Validation",
+                            "Stage 5: Negotiation"))
+);
+      
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8) - UNPIVOT MEDIAN DAYS IN STAGE BY SEGMENT @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT"
+as
+(
+SELECT CURRENT_ACCTSEGMENT__SNW, OPPSTAGE,-- DAYS_IN_STAGE\
+    median(DAYS_IN_STAGE) as MEDIAN_DAYS_IN_STAGE--, * 
+  FROM "TABLEAU_REPORTING"."PUBLIC"."OPPORTUNITY_LIFECYCLE"
+  WHERE TYPE = 'New Business' 
+    AND STAGENAME = 'Closed Won'
+    and OPPSTAGE in ('Stage 0: First Call',
+                     'Stage 1: Initial Engagement',
+                     'Stage 2: Discovery',
+                     'Stage 3: Business & Solution Alignment',
+                     'Stage 4: Validation',
+                     'Stage 5: Negotiation')
+  GROUP BY 1,2
+  order by 1,2
+);
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT";
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-8A) - SUMMARIZE MEDIAN DAYS CALCULATIONS @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT"
+as
+(
+    SELECT t1.CURRENT_ACCTSEGMENT__SNW
+        ,t1.OPPSTAGE
+        ,t1.MEDIAN_DAYS_IN_STAGE
+        ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+        ,t3.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+    FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT" t1 
+    LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_OPEN_UNPIVOT" t2
+        ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+        and t1.OPPSTAGE = t2.OPPSTAGE
+    LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAYS_TOCLOSE_UNPIVOT" t3
+        ON t1.CURRENT_ACCTSEGMENT__SNW = t3.CURRENT_ACCTSEGMENT__SNW
+        and t1.OPPSTAGE = t3.OPPSTAGE
+);
+
+SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT";
+            
+ 
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@ (TOC-9) - FIND # OF DAYS AN OPP HAS BEEN IN STAGE @@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS"
+as
+(
+SELECT t1.ID, t1.NAME, TYPE,t1.STAGENAME,
+  MIN(t2.CREATEDDATE) as FIRSTDAYINSTAGE,
+  DATE(CURRENT_DATE()) - DATE(MIN(t2.CREATEDDATE)) as DAYS_IN_STAGE__SNW
+  
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+ON t1.ID = t2.OPPORTUNITYID
+    AND t1.STAGENAME = t2.STAGENAME
+WHERE ISCLOSED = FALSE
+group by 1,2,3,4
+order by 1,2,3,4
+);
+
+
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS"
+--where name like '%Planet%'
+order by FIRSTDAYINSTAGE;
+
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_UNPIVOT" ;
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT2";
+
+
+
+//this one
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE"
+AS (
+    SELECT 
+    t1.ID
+    ,t1.NAME
+    ,t1.TYPE
+    ,t1.CURRENT_ACCTSEGMENT__SNW
+    ,t1.CREATEDDATE
+    ,t1.stagename
+    ,t2.MEDIAN_DAYS_IN_STAGE
+    ,t2.MEDIAN_DAYS_OPEN_BYSTAGE
+    ,t2.MEDIAN_DAYS_TOCLOSE_BYSTAGE
+    , t1.SALES_CREDIT_ARR__C
+    , t1.DAYS_TO_CLOSE__C
+    ,t1.EBSTA1__EBSTA_SCORE__C
+    ,date(current_date()) - date(t1.createddate) as DAYS_OPEN
+    ,date(t1.closedate) - date(current_date()) as DAYS_TO_CLOSE
+    ,t4.DAYS_IN_STAGE__SNW
+      ,t4.FIRSTDAYINSTAGE
+//      ,t3."'Stage 0: First Call'"
+//      ,t3."'Stage 1: Initial Engagement'"
+//      ,t3."'Stage 2: Discovery'"
+//      ,t3."'Stage 3: Business & Solution Alignment'"
+//      ,t3."'Stage 4: Validation'"
+//      ,t3."'Stage 5: Negotiation'"
+
+//       ,CASE
+//        WHEN t2.MEDIANDAYSINSTAGE < t4.DAYS_IN_STAGE__SNW
+//        THEN 'TRUE'
+//        ELSE 'FALSE'
+//        END AS DAYS_OVER_MEDIAN
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join  "MTL_LOAD_TEST"."PUBLIC"."OPP_LC_MEDIAN_DAY_FT" t2
+ON t1.CURRENT_ACCTSEGMENT__SNW = t2.CURRENT_ACCTSEGMENT__SNW
+AND t1.STAGENAME = t2.OPPSTAGE
+//Left join "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_LIFECYCLE_PIVOT" t3
+//ON t1.CURRENT_ACCTSEGMENT__SNW = t3.CURRENT_ACCTSEGMENT__SNW
+LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_CURRENTSTAGE_DAYS" t4
+ON t1.ID = t4.ID
+WHERE t1.STAGENAME in ('Stage 0: First Call',
+                       'Stage 1: Initial Engagement',
+                       'Stage 2: Discovery',
+                       'Stage 3: Business & Solution Alignment',
+                       'Stage 4: Validation',
+                       'Stage 5: Negotiation')
+);
+
+
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_TEST"
+as
+(
+
+SELECT
+    t1.*
+    ,case when t1.DAYS_IN_STAGE__SNW >= (t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE  ) 
+        then TRUE else FALSE end as OVER_MEDIAN_DAYS_INSTAGE_THRESHOLD
+    ,case when t1.EBSTA1__EBSTA_SCORE__C < t2.EBSTA_SCORE_THRESHOLD 
+        THEN TRUE ELSE FALSE end as BELOW_EBSTASCORE
+        --check fields
+        ,'Check Median Days in Stage' as "Check Median Days in Stage"
+        ,t2.MEDIAN_MULTIPLE * t1.MEDIAN_DAYS_IN_STAGE as test_median
+        ,t1.DAYS_IN_STAGE__SNW as test_DAYS_IN_STAGE__SNW
+     ,case when t1.DAYS_OPEN >= (2 * t1.MEDIAN_DAYS_OPEN_BYSTAGE  ) 
+        then TRUE else FALSE end as OVER_MEDIAN_DAYS_OPEN_BYSTAGE_THRESHOLD
+    ,'Check Median Days Open by Stage' as "Check Median Days Open by Stage"
+    ,MEDIAN_DAYS_OPEN_BYSTAGE as test_MEDIAN_DAYS_OPEN_BYSTAGE
+    ,DAYS_OPEN*2 as test_DAYS_OPEN
+     ,case when t1.DAYS_TO_CLOSE >= (2 * t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE  ) 
+        then TRUE else FALSE end as OVER_MEDIAN_DAYS_TOCLOSE_BYSTAGE_THRESHOLD
+        ,'Check Median Days To Close by Stage' as "Check Median Days To Close by Stage"
+        ,t1.DAYS_TO_CLOSE  as test_DAYS_TO_CLOSE
+        ,t1.MEDIAN_DAYS_TOCLOSE_BYSTAGE*2  as test_MEDIAN_DAYS_TOCLOSE_BYSTAGE
+    ,t2.MEDIAN_MULTIPLE
+    
+    ,t2.EBSTA_SCORE_THRESHOLD
+    ,2 as MEDIAN_DAYS_OPEN_THRESHOLD
+    ,2 as MEDIAN_DAY_TOCLOSE_THRESHOLD
+    ,CASE
+        WHEN BELOW_EBSTASCORE = FALSE AND (OVER_MEDIAN_DAYS_INSTAGE_THRESHOLD = FALSE 
+                                           AND OVER_MEDIAN_DAYS_OPEN_BYSTAGE_THRESHOLD = FALSE
+                                           AND OVER_MEDIAN_DAYS_TOCLOSE_BYSTAGE_THRESHOLD = FALSE)
+                                           THEN 'GREEN'
+        WHEN BELOW_EBSTASCORE = TRUE AND (OVER_MEDIAN_DAYS_INSTAGE_THRESHOLD = TRUE 
+                                           OR OVER_MEDIAN_DAYS_OPEN_BYSTAGE_THRESHOLD = TRUE
+                                           OR OVER_MEDIAN_DAYS_TOCLOSE_BYSTAGE_THRESHOLD = TRUE)  THEN 'RED'
+        WHEN BELOW_EBSTASCORE = TRUE OR (OVER_MEDIAN_DAYS_INSTAGE_THRESHOLD = TRUE 
+                                           OR OVER_MEDIAN_DAYS_OPEN_BYSTAGE_THRESHOLD = TRUE
+                                           OR OVER_MEDIAN_DAYS_TOCLOSE_BYSTAGE_THRESHOLD = TRUE) THEN 'YELLOW'
+
+ END AS OPP_HEALTH
+    
+
+FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_DAYSINSTAGE" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."TARGET_ALERT_INPUT_SHEET" t2
+ON  t1.CURRENT_ACCTSEGMENT__SNW = t2.Segment
+where type = 'New Business'
+);
+
+
+CREATE OR REPLACE TABLE "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_ALERT_STATUS_TEST"
+AS (
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."OPPORTUNITY_HEALTH_ALERT_STATUS_TEST"
+  );
+
+SELECT * FROM "HIGHTOUCH"."HIGHTOUCH"."OPPORTUNITY_HEALTH_ALERT_STATUS_TEST";
+
+
