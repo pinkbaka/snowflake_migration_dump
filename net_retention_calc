@@ -1,0 +1,144 @@
+//Questions
+// For a company like Contentful with 2 Upsell Opps and a Renewal, how are calcuations handled?
+
+set BOQ='1/1/2021';
+set EOQ='4/1/2021';
+//Find Opps that are related to net retention
+
+select t1.Type, t1.Name, PREVIOUS_CONTRACT_END_DATE__C, t1.Closedate, Stagename,  ARR__C, EXPIRING_ACV__C, GROWTH_CALCULATED__C,
+case when Stagename = 'Closed Won' then ARR__C else 0 end
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+on t1.accountid = t2.id
+WHERE 
+  (t2.name not like '%Hula Truck%'
+  OR t2.name not like '%LeanData%')
+AND
+  (
+        (t1.TYPE = 'Renewal' 
+        and PREVIOUS_CONTRACT_END_DATE__C >= '4/1/2021'
+        and PREVIOUS_CONTRACT_END_DATE__C < '7/1/2021')
+    OR
+        (t1.TYPE = 'Upsell'
+        and t1.Closedate >= '4/1/2021'
+        and t1.Closedate  < '7/1/2021'
+        and t1.Probability >0)
+  )
+order by isclosed desc, t1.type desc, stagename desc;
+
+set BOQ='1/1/2021';
+set EOQ='4/1/2021';
+
+select t1.Type, t1.Name, PREVIOUS_CONTRACT_END_DATE__C, t1.Closedate, 
+case when t1.Closedate >=  $EOQ then  TRUE else FALSE end as "Renewal Closes Out of Quarter",
+Stagename,  ARR__C, EXPIRING_ACV__C, GROWTH_CALCULATED__C,
+case when Stagename = 'Closed Won' then ARR__C else 0 end
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+on t1.accountid = t2.id
+WHERE 
+  (t2.name not like '%Hula Truck%'
+  OR t2.name not like '%LeanData%')
+AND
+  (
+        (t1.TYPE = 'Renewal' 
+        and PREVIOUS_CONTRACT_END_DATE__C >= $BOQ
+        and PREVIOUS_CONTRACT_END_DATE__C <  $EOQ)
+    OR
+        (t1.TYPE = 'Upsell'
+        and t1.Closedate >= $BOQ
+        and t1.Closedate  < $EOQ
+        and t1.Probability >0)
+  )
+and stagename in ('Closed Won','Closed Lost','Disqualifed')
+order by isclosed desc, t1.type desc, stagename desc;
+
+set BOQ='4/1/2021';
+set EOQ='7/1/2021';
+
+select 
+t1.id, t1.type, employee_band__C, t1.name, 
+count(*), sum(ARR__C), sum(EXPIRING_ACV__C), sum(GROWTH_CALCULATED__C),
+sum(case when Stagename = 'Closed Won' then ARR__C else 0 end)
+
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+on t1.accountid = t2.id
+WHERE 
+  (t2.name not like '%Hula Truck%'
+  OR t2.name not like '%LeanData%')
+AND
+  (
+        (t1.TYPE = 'Renewal' 
+        and PREVIOUS_CONTRACT_END_DATE__C >= $BOQ
+        and PREVIOUS_CONTRACT_END_DATE__C <  $EOQ)
+    OR
+        (t1.TYPE = 'Upsell'
+        and t1.Closedate >= $BOQ
+        and t1.Closedate  < $EOQ
+        and t1.Probability >0)
+  )
+group by 1,2,3,4
+--and stagename in ('Closed Won','Closed Lost','Disqualifed')
+order by t1.type desc, employee_band__C , t1.name;
+
+
+set BOQ='4/1/2021';
+set EOQ='7/1/2021';
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."SNW_NET_RETENTION_ANALYSIS"
+  as
+  (
+    select 
+      t1.id,t1.type, employee_band__C, t1.name, 
+      case when t3.id is not null then TRUE else FALSE end as HAS_ATTRIBUTION,
+      count(*) as NumOfOpps, sum(ARR__C) as Net_ARR, sum(EXPIRING_ACV__C) as EXPIRING_ACV, sum(GROWTH_CALCULATED__C) as GROWTH_ARR,
+      sum(case when Stagename = 'Closed Won' then ARR__C else 0 end) as Net_ARR_CW,
+      sum(TEMP_EXPIRING_ATTRIBUTION_ARR__C) as TEMP_EXPIRING_ATTRIBUTION_ARR__C
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t2
+        on t1.accountid = t2.id
+    left join "MTL_LOAD_TEST"."PUBLIC"."SNW_ATTRIBUTION_RENEWAL_OPPS" t3
+        on t1.id = t3.id
+    WHERE 
+      (t2.name not like '%Hula Truck%'
+      OR t2.name not like '%LeanData%')
+    AND
+      (
+            (t1.TYPE = 'Renewal' 
+            and PREVIOUS_CONTRACT_END_DATE__C >= $BOQ
+            and PREVIOUS_CONTRACT_END_DATE__C <  $EOQ)
+        OR
+            (t1.TYPE = 'Upsell'
+            and t1.Closedate >= $BOQ
+            and t1.Closedate  < $EOQ
+            and t1.Probability >0)
+      )
+    group by 1,2,3,4,5
+    --and stagename in ('Closed Won','Closed Lost','Disqualifed')
+    order by t1.type desc, HAS_ATTRIBUTION, employee_band__C , t1.name
+  );
+  
+  (SELECT type, HAS_ATTRIBUTION,  SUM(NET_ARR_CW)/ SUM(EXPIRING_ACV), count(*), SUM(NET_ARR),SUM(EXPIRING_ACV),SUM(GROWTH_ARR),SUM(NET_ARR_CW),
+   sum(TEMP_EXPIRING_ATTRIBUTION_ARR__C)
+  FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_NET_RETENTION_ANALYSIS"
+  group by 1,2
+  order by 1,2)
+  UNION
+  (select 'Total' as TYPE,  NULL as HAS_ATTRIBUTION,
+   SUM(NET_ARR_CW)/ SUM(EXPIRING_ACV),
+  count(*), SUM(NET_ARR),SUM(EXPIRING_ACV),SUM(GROWTH_ARR),SUM(NET_ARR_CW),
+   sum(TEMP_EXPIRING_ATTRIBUTION_ARR__C)
+  FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_NET_RETENTION_ANALYSIS")
+  ;
+
+
+SELECT 2919616.03/ 5204930.11;
+
+
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_NET_RETENTION_ANALYSIS"
+WHERE HAS_ATTRIBUTION = FALSE
+and TEMP_EXPIRING_ATTRIBUTION_ARR__C > 0;
+
