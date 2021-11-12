@@ -1,0 +1,499 @@
+
+set begindate = '1/1/2020';
+set enddate = '9/30/2021';    
+
+SELECT year(closedate), quarter(closedate), stagename, count(*) 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+
+WHERE   (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+    and CLOSEDATE >= $begindate and CLOSEDATE <= $enddate
+    AND isclosed = TRUE
+    AND TYPE in ('New Business' , 'Upsell', 'Renewal')
+group by 1,2,3
+order by 3,1,2;
+
+
+SELECT year(closedate), stagename, CURRENT_ACCTSEGMENT__SNW, count(*) 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+
+WHERE   (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+    and CLOSEDATE >= $begindate and CLOSEDATE <= $enddate
+    AND isclosed = TRUE
+    AND TYPE in ('New Business' , 'Upsell', 'Renewal')
+group by 1,2,3
+order by 2,1,3;
+
+SELECT year(closedate), quarter(closedate), stagename, count(t1.*) 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+ON t1.ID = t2.OPPORTUNITYID
+WHERE   (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+    and CLOSEDATE >= $begindate and CLOSEDATE <= $enddate
+    AND isclosed = TRUE
+group by 1,2,3
+order by 3,1,2;
+
+
+SELECT *
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+LEFT JOIN "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES" t2
+ON t1.ID = t2.OPPORTUNITYID
+WHERE   (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+    and CLOSEDATE >= $begindate and CLOSEDATE <= $enddate
+    AND isclosed = TRUE
+    and TYPE in ('New Business' , 'Upsell', 'Renewal')
+    and t1.stagename = 'Disqualified'
+    and (S1_REACHED is not null or
+         S2_REACHED is not null or
+         S3_REACHED is not null or
+         S4_REACHED is not null or
+         S5_REACHED is not null or
+         CW_REACHED is not null or
+         CL_REACHED is not null 
+         );
+
+
+
+
+
+
+
+
+// set begindate = '1/1/2021';
+//set enddate = '3/31/2021';
+//    SELECT *, t1.STAGENAME as "STAGENAME_CURRENT", t2.STAGENAME as "IMP_STAGENAME" FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+//    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_IMPUTED_OPPORTUNITY_STAGES" t2
+//    on t1.ID = t2.OPPORTUNITYID) t
+//    --WHERE CLOSEDATE >= '10/1/2020' and CLOSEDATE <= '12/31/2020' and ISCLOSED = TRUE
+//    WHERE CLOSEDATE >= $begindate and CLOSEDATE < $enddate and ISCLOSED = TRUE
+//    AND IMP_STAGENAME = 'Stage 3: Business & Solution Alignment'
+//    group by Opp_Ownername__Snw, OWNERID, IMP_STAGENAME
+    
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+as (
+    
+    
+    SELECT 
+    S0_REACHED,
+    S1_REACHED,
+    S2_REACHED,
+    S3_REACHED,
+    S4_REACHED,
+    S5_REACHED,
+    CW_REACHED,
+    CL_REACHED,
+    DQ_REACHED  
+    ,t1.*, 
+    MONTH(t1.CLOSEDATE) as CLOSE_MONTH,
+    QUARTER(t1.CLOSEDATE) as CLOSE_QUARTER,
+    YEAR(t1.CLOSEDATE) as CLOSE_YEAR,
+    CURRENT_SEGMENT_HIERARCHY_SNW,
+    NORTH_AMERICAN_STATE_PROVINCE__SNW,
+    NORTH_AMERICAN_COUNTRY__SNW,
+    TERRITORY_2021__SNW
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"t2
+    on t1.ID = t2.OPPORTUNITYID
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t3
+    on t1.ACCOUNTID = t3.ID
+    WHERE (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+    and CLOSEDATE >= $begindate and CLOSEDATE <= $enddate
+    AND isclosed = TRUE
+    --AND t1.Type = 'New Business'
+ );
+ 
+ //SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+ 
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_CWRATE_OPPS_BASE" AS
+SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS";
+ 
+ 
+ 
+ //SELECT stagename, * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CW_Opps_v1" WHERE OPP_OWNERNAME__SNW = 'Anna Ayrapetyan'
+ // number of opps that reach each stage
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v2"
+as (
+ SELECT ID, NAME, TYPE, BEST_ACCTSEGMENT_AT_CLOSE__SNW, CURRENT_SEGMENT_HIERARCHY_SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID, OPP_OWNERNAME__SNW,
+    CLOSE_YEAR, CLOSE_QUARTER, CLOSE_MONTH,
+     count_if(S0_REACHED is not null) as OppsReachS0,
+     count_if(S1_REACHED is not null) as OppsReachS1,
+     count_if(S2_REACHED is not null) as OppsReachS2,
+     count_if(S3_REACHED is not null) as OppsReachS3,
+     count_if(S4_REACHED is not null) as OppsReachS4,
+     count_if(S5_REACHED is not null) as OppsReachS5,
+     count_if(CW_REACHED is not null) as OppsReachCW,
+     count_if(CL_REACHED is not null) as OppsReachCL,
+     count_if(DQ_REACHED is not null) as OppsReachDQ,
+     count(*) as TotalOpps
+ FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+ group by 1,2,3,4,5,6,7,8,9, 10, 11
+ order by 1,2, 3,4,5, 6, 7, 8
+ );
+ 
+//
+// 
+//CREATE OR REPLACE VIEW SNW_REP_CW_RATE AS
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER";
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP" AS
+  select * from "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v2"
+    unpivot(OPPS_IN_STAGE for STAGE in (OppsReachS0, OppsReachS1, OppsReachS2, OppsReachS3, OppsReachS4, OppsReachS5));
+ 
+
+CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v3"
+as (
+ SELECT  TYPE, BEST_ACCTSEGMENT_AT_CLOSE__SNW, 
+    CLOSE_YEAR, CLOSE_QUARTER, 
+     count_if(S0_REACHED is not null) as OppsReachS0,
+     count_if(S1_REACHED is not null) as OppsReachS1,
+     count_if(S2_REACHED is not null) as OppsReachS2,
+     count_if(S3_REACHED is not null) as OppsReachS3,
+     count_if(S4_REACHED is not null) as OppsReachS4,
+     count_if(S5_REACHED is not null) as OppsReachS5,
+     count_if(CW_REACHED is not null) as OppsReachCW,
+     count_if(CL_REACHED is not null) as OppsReachCL,
+     count_if(DQ_REACHED is not null) as OppsReachDQ,
+     count(*) as TotalOpps
+ FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+  where type in ('New Business' ,'Renewal','Upsell')
+ group by 1,2,3,4
+ order by TYPE,BEST_ACCTSEGMENT_AT_CLOSE__SNW, 
+    CLOSE_YEAR, CLOSE_QUARTER
+ );
+ 
+ SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v3"
+ ;
+ 
+ 
+ 
+ CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v4"
+as (
+ SELECT  TYPE, BEST_ACCTSEGMENT_AT_CLOSE__SNW,
+     count_if(S0_REACHED is not null) as OppsReachS0,
+     count_if(S1_REACHED is not null) as OppsReachS1,
+     count_if(S2_REACHED is not null) as OppsReachS2,
+     count_if(S3_REACHED is not null) as OppsReachS3,
+     count_if(S4_REACHED is not null) as OppsReachS4,
+     count_if(S5_REACHED is not null) as OppsReachS5,
+     count_if(CW_REACHED is not null) as OppsReachCW,
+     count_if(CL_REACHED is not null) as OppsReachCL,
+     count_if(DQ_REACHED is not null) as OppsReachDQ,
+     count(*) as TotalOpps
+ FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+  where type in ('New Business' ,'Renewal','Upsell')
+ group by 1,2
+ order by TYPE,BEST_ACCTSEGMENT_AT_CLOSE__SNW
+ );
+ 
+  CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v5"
+as (
+ SELECT *
+, DIV0(OPPSREACHCW,OPPSREACHS0) as S0_RATE
+, DIV0(OPPSREACHCW,OPPSREACHS1) as S1_RATE
+, DIV0(OPPSREACHCW,OPPSREACHS2) as S2_RATE
+, DIV0(OPPSREACHCW,OPPSREACHS3) as S3_RATE
+, DIV0(OPPSREACHCW,OPPSREACHS4) as S4_RATE
+, DIV0(OPPSREACHCW,OPPSREACHS5) as S5_RATE
+ 
+ FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v4"
+  );
+
+  SELECT * FROM  "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v5";
+  
+  CREATE OR REPLACE TABLE "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v6"
+as ( 
+ SELECT TYPE, BEST_ACCTSEGMENT_AT_CLOSE__SNW,STAGE, WINRATE,
+ case 
+    WHEN STAGE = 'S0_RATE' THEN 'Stage 0: First Call'
+    WHEN STAGE = 'S1_RATE' THEN 'Stage 1: Initial Engagement'
+    WHEN STAGE = 'S2_RATE' THEN 'Stage 2: Discovery'
+    WHEN STAGE = 'S3_RATE' THEN 'Stage 3: Business & Solution Alignment'
+    WHEN STAGE = 'S4_RATE' THEN 'Stage 4: Validation'
+    WHEN STAGE = 'S5_RATE' THEN 'Stage 5: Negotiation'
+    
+    END AS STAGENAME_CONVERSION
+ FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v5"
+ UNPIVOT (WINRATE for STAGE in (S0_RATE,S1_RATE,S2_RATE,S3_RATE,S4_RATE,S5_RATE))
+  );
+  
+ CREATE OR REPLACE TABLE  "MTL_LOAD_TEST"."PUBLIC"."TMP_OPP_WITH_RATES"
+ AS
+(
+  SELECT t1.*, t2.WINRATE, t3.CLOSE_RATE,  
+  1-t3.CLOSE_RATE as PUSH_RATE,
+  t3.CLOSE_RATE*t2.WINRATE as CLOSEWIN_RATE,
+   t3.CLOSE_RATE* (1-t2.WINRATE) as CLOSELOST_RATE
+  
+  FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+  LEFT JOIN "MTL_LOAD_TEST"."PUBLIC"."TMP_AE_CW_Opps_v6" t2
+  on t1.BEST_ACCTSEGMENT_AT_CLOSE__SNW = t2.BEST_ACCTSEGMENT_AT_CLOSE__SNW
+    and t1.STAGENAME = t2.STAGENAME_CONVERSION
+    and t1.type = t2.type
+  LEFT JOIN  "MTL_LOAD_TEST"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS_PIVOT_TMP4" t3
+    on t1.BEST_ACCTSEGMENT_AT_CLOSE__SNW = t3.BEST_ACCTSEGMENT_AT_CLOSE__SNW
+    and t1.STAGENAME = t3.IMPUTED_STAGE
+    and t1.type = t3.type  
+);
+SELECT TOP 10
+
+ID,NAME, WINRATE, CLOSE_RATE, PUSH_RATE, CLOSEWIN_RATE,CLOSELOST_RATE,
+PUSH_RATE + CLOSEWIN_RATE + CLOSELOST_RATE as math_check
+FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_OPP_WITH_RATES" 
+where CLOSEDATE >= '1/1/2020'
+and isclosed = false
+and type in ('New Business')
+;
+;
+SELECT count(*)FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" ;
+SELECT count(*)FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_OPP_WITH_RATES" ;
+
+ CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."TMP_OPP_WITH_RATES" AS
+SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."TMP_OPP_WITH_RATES";   
+     
+// RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT // RUN TO THIS POINT // RUN TO THIS POINT // RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT 
+// RUN TO THIS POINT // RUN TO THIS POINT // RUN TO THIS POINT // RUN TO THIS POINT 
+ 
+    
+//                        ,case when "'Stage 0: First Call'"                      is not null then 1 else 0 end as "S0" 
+//                    ,case when "'Stage 1: Initial Engagement'"              is not null then 1 else 0 end as "S1" 
+//                    ,case when "'Stage 2: Discovery'"                       is not null then 1 else 0 end as "S2" 
+//                    ,case when "'Stage 3: Business & Solution Alignment'"   is not null then 1 else 0 end  as "S3" 
+//                    ,case when "'Stage 4: Validation'"                      is not null then 1 else 0 end as "S4" 
+//                    ,case when "'Stage 5: Negotiation'"                     is not null then 1 else 0 end as "S5" 
+
+SELECT stagename, CURRENT_ACCTSEGMENT__SNW, count(*) 
+FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+WHERE TYPE = 'Renewal'
+--and stagename in ('Closed Lost')
+and closedate >= '1/1/2020'
+group by 1,2
+order by 2,1
+
+;
+ select * from monthly_sales
+    unpivot(sales for month in (jan, feb, mar, april))
+    order by empid;
+ 
+ SELECT CURRENT_SEGMENT_HIERARCHY_SNW,
+ OPPORTUNITY_OWNER_ROLE__C,OWNERID,OPP_OWNERNAME__SNW,CLOSE_YEAR,STAGE,
+ SUM(OPPSREACHCW),
+  SUM(OPPSREACHCL),
+    SUM(OPPSREACHDQ),
+    SUM(TOTALOPPS),
+    SUM(OPPS_IN_STAGE)
+ FROM  "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP" 
+ group by CURRENT_SEGMENT_HIERARCHY_SNW,
+ OPPORTUNITY_OWNER_ROLE__C,OWNERID,OPP_OWNERNAME__SNW,CLOSE_YEAR,STAGE;
+ 
+ 
+SELECT date(t1.CREATEDDATE) as date_of_CREATEDDATE, t1.CLOSEDATE FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t1
+left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2
+on t1.OPPORTUNITYID = t2.id
+WHERE t2.name = 'Paypal - Dist Eng Replace 1500 EPs' 
+group by 1, 2
+order by date_of_CREATEDDATE asc;
+
+
+
+
+// outstanding tasks
+-- paramaterize dates for query
+
+// Create temp table to combine opportunity and opportunity history
+// Look at all the opportunities that came into a quarter
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis1"
+as (
+    SELECT t1.id as opp_id, t1.name, t1.stagename, t1.ARR__C, BEST_ACCTSEGMENT_AT_CLOSE__SNW, t1.type, t1.createddate as opp_createdate, 
+      t2.closedate as opphist_maxCloseDateinPeriod,  t1.closedate as opp_closedate, 
+      t2.CREATEDDATE as OppChangeDate, 
+      rank () over (partition by t1.ID order by  t2.CREATEDDATE desc ) as changerank
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITYHISTORY" t2
+    on t1.id = t2.opportunityid
+    where t1.CLOSEDATE >= '1/1/2021'                      --@Parameter
+      and date(t1.CREATEDDATE) < '1/1/2021'               --@Parameter
+      and date(t2.CREATEDDATE) < '1/1/2021'               --@Parameter
+      and t1.type in ('New Business', 'Renewal', 'Upsell')
+    group by 1,2,3,4,5,6, 7,8,9,10
+    order by 2, changerank)
+; 
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis2"
+as (
+    SELECT 
+        case when (OPPHIST_MAXCLOSEDATEINPERIOD  between '1/1/2021' and '3/31/2021' ) then TRUE else FALSE end as hadCloseDateinCQ, 
+        case when (OPPHIST_MAXCLOSEDATEINPERIOD  < '1/1/2021' ) then TRUE else FALSE end as hadCloseDateinPQ, 
+        case when opp_closedate > '3/31/2021' then TRUE else FALSE end as HasClosedDate_FQ,  
+        case when opp_closedate > '3/31/2021' and  (OPPHIST_MAXCLOSEDATEINPERIOD  between '1/1/2021' and '3/31/2021' )
+            then TRUE else FALSE end as pushed_NQ,  
+        case when opp_closedate  between '1/1/2021' and '3/31/2021'  then TRUE else FALSE end as CloseDateinCQ,
+        case when OPPHIST_MAXCLOSEDATEINPERIOD > '3/31/2021' then TRUE else FALSE end as HadCloseDate_FQ, 
+        OPP_CLOSEDATE-OPPHIST_MAXCLOSEDATEINPERIOD as delta_PdMax_vs_OppClose, *
+    FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis1"
+    where  changerank = 1 
+  );
+ 
+ CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis3"
+as (
+SELECT 
+case when hadCloseDateinCQ and HasClosedDate_FQ then 'pushed to NQ'
+    when CloseDateinCQ and HadCloseDate_FQ then 'pulled from FQ'
+    when hadCloseDateinCQ and CloseDateinCQ then 'set and close in CQ'
+    when HasClosedDate_FQ then 'set to close in FQ'
+    when hadCloseDateinPQ and CloseDateinCQ then 'zombie deal'
+    else ' other' end as closecategory
+
+,* FROM  "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis2"
+ order by 1 desc);
+group by 1,2
+order by 1,2
+   );
+WHERE CloseDateinCQ = TRUE
+and HadCloseDate_FQ = TRUE
+order by OPPHIST_MAXCLOSEDATEINPERIOD desc;
+
+
+
+
+
+CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis_Final"
+as (
+  SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis3"
+  );
+
+CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_PUSH_RATE_ANALYSIS" AS
+(
+  SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_PushAnalysis_Final"
+);
+
+ 
+ 
+ 
+ 
+ 
+// 
+// 
+// SELECT SBQQ__PRODUCTFAMILY__C,SBQQ__PRODUCTNAME__C
+//FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"
+// group by 1 ,2
+// order by 1, 2
+//
+// 
+// 
+//SELECT ESTIMATED_EMPLOYEES_AT_CLOSE__C, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+//WHERE stagename = 'Closed Won'
+//order by closedate desc
+//
+//
+//----------- REDO
+//
+//
+//
+//set begindate = '1/1/2020';
+//set enddate = '3/31/2021';    
+//CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+//as (
+//    
+//    
+//    SELECT 
+//
+//    S0_REACHED,
+//    S1_REACHED,
+//    S2_REACHED,
+//    S3_REACHED,
+//    S4_REACHED,
+//    S5_REACHED,
+//    CW_REACHED,
+//    CL_REACHED,
+//    DQ_REACHED
+//    
+//        
+//    ,t1.*, 
+//    MONTH(t1.CLOSEDATE) as CLOSE_MONTH,
+//    QUARTER(t1.CLOSEDATE) as CLOSE_QUARTER,
+//    YEAR(t1.CLOSEDATE) as CLOSE_YEAR,
+//    CURRENT_SEGMENT_HIERARCHY_SNW,
+//    NORTH_AMERICAN_STATE_PROVINCE__SNW,
+//    NORTH_AMERICAN_COUNTRY__SNW,
+//    TERRITORY_2021__SNW
+//    FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t1
+//    left join "MTL_LOAD_PRE"."PUBLIC"."SNW_OPPORTUNITY_STAGES"t2
+//    on t1.ID = t2.OPPORTUNITYID
+//    left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_ACCOUNT" t3
+//    on t1.ACCOUNTID = t3.ID
+//    WHERE (OPPORTUNITY_OWNER_ROLE__C like '%AM%' or OPPORTUNITY_OWNER_ROLE__C like '%AE%')
+//    and CLOSEDATE >= $begindate and CLOSEDATE < $enddate
+//    AND isclosed = TRUE
+//    AND t1.Type = 'New Business'
+// );
+// 
+// SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS";
+// 
+//CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_AE_CWRATE_OPPS_BASE" AS
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS";
+// 
+// 
+// 
+// //SELECT stagename, * FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CW_Opps_v1" WHERE OPP_OWNERNAME__SNW = 'Anna Ayrapetyan'
+// // number of opps that reach each stage
+//CREATE OR REPLACE TABLE "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CW_Opps_v2"
+//as (
+// SELECT CURRENT_SEGMENT_HIERARCHY_SNW, OPPORTUNITY_OWNER_ROLE__C, OWNERID, OPP_OWNERNAME__SNW,
+//    CLOSE_YEAR, CLOSE_QUARTER, CLOSE_MONTH,
+//     count_if(S0_REACHED is not null) as OppsReachS0,
+//     count_if(S1_REACHED is not null) as OppsReachS1,
+//     count_if(S2_REACHED is not null) as OppsReachS2,
+//     count_if(S3_REACHED is not null) as OppsReachS3,
+//     count_if(S4_REACHED is not null) as OppsReachS4,
+//     count_if(S5_REACHED is not null) as OppsReachS5,
+//     count_if(CW_REACHED is not null) as OppsReachCW,
+//     count_if(CL_REACHED is not null) as OppsReachCL,
+//     count_if(DQ_REACHED is not null) as OppsReachDQ,
+//     count(*) as TotalOpps
+// FROM "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CWRATE_OPPS"
+// group by 1,2,3,4,5,6,7
+// order by 1,2, 3,4,5, 6
+// );
+// 
+//
+// 
+//CREATE OR REPLACE VIEW SNW_REP_CW_RATE AS
+//SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_USER";
+//
+//CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP" AS
+//  select * from "MTL_LOAD_PRE"."PUBLIC"."TMP_AE_CW_Opps_v2"
+//    unpivot(OPPS_IN_STAGE for STAGE in (OppsReachS0, OppsReachS1, OppsReachS2, OppsReachS3, OppsReachS4, OppsReachS5));
+// 
+// SELECT CURRENT_SEGMENT_HIERARCHY_SNW,
+// OPPORTUNITY_OWNER_ROLE__C,OWNERID,OPP_OWNERNAME__SNW,CLOSE_YEAR,STAGE,
+// SUM(OPPSREACHCW),
+//  SUM(OPPSREACHCL),
+//    SUM(OPPSREACHDQ),
+//    SUM(TOTALOPPS),
+//    SUM(OPPS_IN_STAGE)
+// FROM  "TABLEAU_REPORTING"."PUBLIC"."SNW_REP_CW_RATE_SETUP" 
+// group by CURRENT_SEGMENT_HIERARCHY_SNW,
+// OPPORTUNITY_OWNER_ROLE__C,OWNERID,OPP_OWNERNAME__SNW,CLOSE_YEAR,STAGE
+// 
+// 
+// 
+// SELECT SBQQ__PRODUCTFAMILY__C,SBQQ__PRODUCTNAME__C
+//FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_SBQQ__QUOTELINE__C"
+// group by 1 ,2
+// order by 1, 2
+//
+// 
+// 
+//SELECT ESTIMATED_EMPLOYEES_AT_CLOSE__C, * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
+//WHERE stagename = 'Closed Won'
+//order by closedate desc
