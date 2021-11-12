@@ -1,0 +1,46 @@
+//-- Create a role for the census user
+//CREATE OR REPLACE ROLE CENSUS_ROLE;
+//
+//-- Ensure the sysadmin role inherits any privileges the census role is granted. Note that this does not grant sysadmin privileges to the census role
+//GRANT ROLE CENSUS_ROLE TO ROLE SYSADMIN;
+//
+//-- Create a warehouse for the census user, optimizing for cost over performance
+//CREATE WAREHOUSE CENSUS_WAREHOUSE WITH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = FALSE;
+//
+//-- Allow the census user to run queries in the warehouse
+//GRANT USAGE ON WAREHOUSE CENSUS_WAREHOUSE TO ROLE CENSUS_ROLE;
+//
+//-- Allow the census user to start and stop the warehouse and abort running queries in the warehouse
+//GRANT OPERATE ON WAREHOUSE CENSUS_WAREHOUSE TO ROLE CENSUS_ROLE;
+//
+//-- Allow the census user to see historical query statistics on queries in its warehouse
+//GRANT MONITOR ON WAREHOUSE CENSUS_WAREHOUSE TO ROLE CENSUS_ROLE;
+//
+//-- Create the census user
+//-- Do not set DEFAULT_WORKSPACE, this will impact which tables are visible to Census
+//CREATE USER CENSUS WITH DEFAULT_ROLE = CENSUS_ROLE DEFAULT_WAREHOUSE = CENSUS_WAREHOUSE PASSWORD = 'CS!23Qwe';
+//
+//-- Grant the census role to the census user
+//GRANT ROLE CENSUS_ROLE TO USER CENSUS;
+
+-- Create a private bookkeeping database where Census can store sync state
+--CREATE OR REPLACE DATABASE "LD_PRODUCT";
+
+-- Give the census user full access to the bookkeeping database
+GRANT ALL PRIVILEGES ON DATABASE "LD_PRODUCT" TO ROLE SYSADMIN;
+
+-- Create a private bookkeeping schema where Census can store sync state
+CREATE SCHEMA "LD_PRODUCT"."PRE";
+
+-- Give the census user full access to the bookkeeping schema
+GRANT ALL PRIVILEGES ON SCHEMA "LD_PRODUCT"."PRE" TO ROLE SYSADMIN;
+
+
+-- Create a private bookkeeping schema where Census can store sync state
+CREATE SCHEMA "LD_PRODUCT"."PROD";
+
+-- Give the census user full access to the bookkeeping schema
+GRANT ALL PRIVILEGES ON SCHEMA "LD_PRODUCT"."PROD" TO ROLE SYSADMIN;
+
+
+
