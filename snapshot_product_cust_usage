@@ -1,0 +1,78 @@
+
+
+// Maintain Weekly History of Customer Usage metrics based on Saturday data
+//CREATE OR REPLACE TABLE "LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY"
+//as
+//(
+  SELECT *, current_date() as SNAPSHOT_DATE_SNW 
+  FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_CUSTOMER_USAGE_METRICS__C"
+  where 
+   --   DAY_OF_WEEK__C = 7
+   -- AND 
+  date__C < (current_date()-7)
+//);
+//    
+
+
+SELECT date__C as test
+FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_CUSTOMER_USAGE_METRICS__C"
+where 
+date__C >= (current_date()-7)
+group by 1
+order by 1;
+
+select SNAPSHOT_DATE_SNW,date__C,DAY_OF_WEEK__C from  "LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY"
+group by 1,2,3
+order by SNAPSHOT_DATE_SNW desc,date__C desc;
+
+
+  
+              
+    USE "PC_MATILLIONLOADER_DB";
+  
+    CREATE or replace PROCEDURE usp_SNAPSHOT_CUST_USAGE_METRICS()
+    RETURNS VARCHAR
+    LANGUAGE javascript
+    AS
+    $$
+      // Snapshot customer usage metrics from the last Saturday
+      var sql_command = `CREATE OR REPLACE TABLE "LD_PRODUCT"."PRE"."CUSTOMER_USAGE_METRICS_SNAPSHOT"
+                          as
+                          (
+                            SELECT *, current_date() as SNAPSHOT_DATE_SNW 
+                            FROM "PC_MATILLIONLOADER_DB"."PUBLIC"."TARGET_CUSTOMER_USAGE_METRICS__C"
+                            where 
+                            date__C >= (date(current_date())-6)
+                          )`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+                            
+      // Append Snapshot to History Table
+      var sql_command = `insert into  "LD_PRODUCT"."PROD"."CUSTOMER_USAGE_METRICS_HISTORY"
+                                select * FROM "LD_PRODUCT"."PRE"."CUSTOMER_USAGE_METRICS_SNAPSHOT"`;
+      var statement = snowflake.createStatement( {sqlText: sql_command} );
+      var result_set = statement.execute(); 
+
+    return 'Done.';
+    $$;    
+                          
+CALL usp_SNAPSHOT_CUST_USAGE_METRICS();
+  
+    
+USE "PC_MATILLIONLOADER_DB";
+CREATE OR REPLACE TASK LD_PD_SNAPSHOT_CUSTOMER_USAGE_METRICS
+    WAREHOUSE = "REPORTING_WH_PRODUCT"
+    SCHEDULE = 'USING CRON 0 1 * * TUE America/Los_Angeles'
+
+--WHEN
+AS
+   CALL usp_SNAPSHOT_CUST_USAGE_METRICS();
+USE "PC_MATILLIONLOADER_DB";                            
+show tasks;
+                            
+ALTER TASK LD_PD_SNAPSHOT_CUSTOMER_USAGE_METRICS RESUME;
+
+ALTER TASK LD_PD_SNAPSHOT_CUSTOMER_USAGE_METRICS SUSPEND;
+                            
+                            select *
+  from table(information_schema.task_history())
