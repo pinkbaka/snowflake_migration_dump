@@ -205,11 +205,6 @@ where id = '0066e00001fLsUMAA0';
 
 
 
-SELECT* FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC" 
-where id = '0065A00001a1g96QAA';
-
-SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
-where id = '0066e00001cnOCgAAM';
 
 UPDATE  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
 set FINANCE_COMBINED_ARR = FINANCE_COMBINED_ARR-10
@@ -232,13 +227,6 @@ where id = '0066e00001cnOCgAAM';
 
 
 
-
-SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
-where id = '0066e00001cnOCgAAM';
-
-
-SELECT Closedate,arr__C, fiscalquarter, * FROM  "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
-where id = '0066e00001cnOCgAAM';
 
   
 
@@ -264,60 +252,8 @@ CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_FINANCE_ARR_CALC" AS
   );
   
 
-SELECT * FROM "MTL_LOAD_TEST"."PUBLIC"."SNW_FINANCE_ARR_CALC"
-WHERE ID in ( '0065A00001cmdl3QAA', '0065A00001cmdkpQAA', '0066e00001eVx8rAAC', '0066e00001coNZyAAM');
-  
-
-SELECT 
-month(CLOSEDATE),
-type,
-SUM(NEW_ARR__FINANCE),
-SUM(UPSELL_ARR__FINANCE),
-SUM(GROWTH_ARR__FINANCE2)
-FROM "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
-WHERE CLOSEDATE >= '1/1/2021'
-and  CLOSEDATE <= '6/30/2021'
-and stagename = 'Closed Won'
-group by 1,2
-order by 1,2 asc;
 
 
-SELECT * FROM  "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
-WHERE CLOSEDATE >= '1/1/2021'
-and stagename = 'Closed Won'
-and type in ('Renewal', 'Upsell', 'New Business');
-
-
-select "Opportunities ID - 15 to 18","Close Date", "Opportunity Name", "Growth",Growth_Amount__c, GROWTH_CALCULATED__C,
-ifnull("Growth", 0) - GROWTH_CALCULATED__C
-FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance" t1
-left join "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY" t2 
-on t1."Opportunities ID - 15 to 18" = t2.ID
-WHERE "Close Date" >= '3/1/2021'
-and t1."Type" = 'Renewal';
-
-SELECT
-ID,
-OPP_CREATEDBY_NAME__SNW,
-OPP_BESTRELATIONSHIP_CREATIONNAME__SNW,
-OPP_OWNERNAME__SNW,
-
-* FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
-WHERE CREATEDBYID <> BEST_RELATIONSHIP_UPON_OPP_CREATION__C
-and TYPE = 'New Business'
-and CREATEDDATE >= '4/1/2021';
-
-
-
-
-SELECT ID, name, type, Closedate FROM  "MTL_LOAD_PRE"."PUBLIC"."TEST_ARR_CALC_FINANCE"
-WHERE CLOSEDATE >= '1/1/2021'
-and stagename = 'Closed Won'
-and type in ('Renewal', 'Upsell', 'New Business');
-
-SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type"  FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
-WHERE "Close Date" >= '1/1/2021'
-and "Type" in ('Renewal', 'Upsell', 'New Business');
 
 
 SELECT *
