@@ -251,6 +251,55 @@ CREATE OR REPLACE VIEW "TABLEAU_REPORTING"."PUBLIC"."SNW_FINANCE_ARR_CALC" AS
     SELECT * FROM "MTL_LOAD_PRE"."PUBLIC"."TARGET_OPPORTUNITY"
   );
   
+--- ANNIE STOP HERE
+
+
+SELECT  abs(ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0)),
+ ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0),
+month(closedate),*
+FROM (
+        SELECT ID, name, type, Closedate, 
+        FINANCE_NEW_ARR,
+        FINANCE_UPSELL_ARR,
+        FINANCE_GROWTH_ARR,
+  FINANCE_COMBINED_ARR,
+  ARR__C,CURRENT_ACCTSEGMENT__SNW
+        FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
+  
+  --SNW_FINANCE_ARR_CALC
+  --TEST_ARR_CALC_FINANCE
+        WHERE CLOSEDATE >= '1/1/2021'
+        AND CLOSEDATE <= '10/31/2021'
+        and stagename = 'Closed Won'
+        and type in ('Renewal', 'Upsell', 'New Business')) t1
+FULL OUTER JOIN (
+        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type","Account Segment Formula",
+        "New",
+        "Upsell",
+        "Growth",
+        ifnull("New",0)+ifnull("Upsell",0)+ifnull("Growth",0) as VPSheet_Combined_ARR
+        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
+        WHERE "Close Date" >= '1/1/2021'
+        AND "Close Date" <= '10/31/2021'
+        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
+ON t1.ID = t2."Opportunities ID - 15 to 18"
+WHERE abs(FINANCE_NEW_ARR - "New") > .1 or abs(FINANCE_UPSELL_ARR- "Upsell") > .1 or abs(FINANCE_GROWTH_ARR - "Growth") > .1 
+or (FINANCE_NEW_ARR is null and "New" is not null) or (FINANCE_NEW_ARR is not null and "New" is null)
+or (FINANCE_UPSELL_ARR is null and "Upsell" is not null) or (FINANCE_UPSELL_ARR is not null and "Upsell" is null)
+or (FINANCE_GROWTH_ARR is null and "Growth" is not null) or (FINANCE_GROWTH_ARR is not null and "Growth" is null)
+or t1.type <> t2."Type"
+or upper(name) like '%ATTRI%'
+--or FINANCE_COMBINED_ARR <>  t2."ARR"
+or abs(FINANCE_COMBINED_ARR - VPSheet_Combined_ARR) > 10
+--or t1.ARR__C <> t2."ARR"
+or ID is null
+
+
+--- 0065A00001clh6kQAA (zero dollar partner op)
+order by closedate asc
+;
+
+
 
 
 
@@ -375,52 +424,6 @@ or t1.type <> t2."Type"
 order by closedate asc
 ;
 
-
-
-SELECT  abs(ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0)),
- ifnull(FINANCE_COMBINED_ARR,0) - ifnull(VPSheet_Combined_ARR,0),
-month(closedate),*
-FROM (
-        SELECT ID, name, type, Closedate, 
-        FINANCE_NEW_ARR,
-        FINANCE_UPSELL_ARR,
-        FINANCE_GROWTH_ARR,
-  FINANCE_COMBINED_ARR,
-  ARR__C,CURRENT_ACCTSEGMENT__SNW
-        FROM  "MTL_LOAD_PRE"."PUBLIC"."SNW_FINANCE_ARR_CALC"
-  
-  --SNW_FINANCE_ARR_CALC
-  --TEST_ARR_CALC_FINANCE
-        WHERE CLOSEDATE >= '1/1/2021'
-        AND CLOSEDATE <= '10/31/2021'
-        and stagename = 'Closed Won'
-        and type in ('Renewal', 'Upsell', 'New Business')) t1
-FULL OUTER JOIN (
-        SELECT "Opportunities ID - 15 to 18", "Opportunity Name", "Type","Account Segment Formula",
-        "New",
-        "Upsell",
-        "Growth",
-        ifnull("New",0)+ifnull("Upsell",0)+ifnull("Growth",0) as VPSheet_Combined_ARR
-        FROM "MTL_LOAD_TEST"."PUBLIC"."OppAnalysisVPFinance"
-        WHERE "Close Date" >= '1/1/2021'
-        AND "Close Date" <= '10/31/2021'
-        and "Type" in ('Renewal', 'Upsell', 'New Business')) t2
-ON t1.ID = t2."Opportunities ID - 15 to 18"
-WHERE abs(FINANCE_NEW_ARR - "New") > .1 or abs(FINANCE_UPSELL_ARR- "Upsell") > .1 or abs(FINANCE_GROWTH_ARR - "Growth") > .1 
-or (FINANCE_NEW_ARR is null and "New" is not null) or (FINANCE_NEW_ARR is not null and "New" is null)
-or (FINANCE_UPSELL_ARR is null and "Upsell" is not null) or (FINANCE_UPSELL_ARR is not null and "Upsell" is null)
-or (FINANCE_GROWTH_ARR is null and "Growth" is not null) or (FINANCE_GROWTH_ARR is not null and "Growth" is null)
-or t1.type <> t2."Type"
-or upper(name) like '%ATTRI%'
---or FINANCE_COMBINED_ARR <>  t2."ARR"
-or abs(FINANCE_COMBINED_ARR - VPSheet_Combined_ARR) > 10
---or t1.ARR__C <> t2."ARR"
-or ID is null
-
-
---- 0065A00001clh6kQAA (zero dollar partner op)
-order by closedate asc
-;
 
 
 
